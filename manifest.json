@@ -1,0 +1,231 @@
+{
+  "schema": 1,
+  "categories": [
+    { "id": "windows", "name": "Windows replacements" },
+    { "id": "audio", "name": "Audio" },
+    { "id": "gaming", "name": "Gaming" },
+    { "id": "media", "name": "Media" },
+    { "id": "work", "name": "Work" }
+  ],
+  "apps": [
+    {
+      "id": "foyer",
+      "name": "Foyer",
+      "repo": "larosa023/Foyer",
+      "description": "A fast, fully customizable Start menu.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Foyer/main/res/foyer.png",
+      "exe": "Foyer.exe",
+      "install": { "type": "portable", "asset": "Foyer.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Foyer" },
+      "args": { "quit": "--quit" },
+      "critical": true
+    },
+    {
+      "id": "strata",
+      "name": "Strata",
+      "repo": "larosa023/Strata",
+      "description": "A fast, keyboard-first File Explorer replacement.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Strata/main/res/strata.png",
+      "exe": "Strata.exe",
+      "install": { "type": "portable", "asset": "Strata.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Strata" },
+      "args": { "quit": "--quit", "uninstall": "--uninstall" },
+      "critical": true
+    },
+    {
+      "id": "breaker",
+      "name": "Breaker",
+      "repo": "larosa023/Breaker",
+      "description": "Settings and Control Panel in one fast app.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Breaker/main/res/breaker.png",
+      "exe": "Breaker.exe",
+      "install": { "type": "portable", "asset": "Breaker.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Breaker" },
+      "args": { "quit": "--quit", "uninstall": "--uninstall" }
+    },
+    {
+      "id": "switch",
+      "name": "Switch",
+      "repo": "larosa023/Switch",
+      "description": "A fast, modern Alt-Tab replacement.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Switch/main/assets/switch.png",
+      "exe": "Switch.exe",
+      "install": { "type": "portable", "asset": "Switch.exe", "checksums": "Switch.exe.sha256", "dir": "%LOCALAPPDATA%\\Programs\\Switch" },
+      "args": { "quit": "--quit" },
+      "critical": true
+    },
+    {
+      "id": "ember",
+      "name": "Ember",
+      "repo": "larosa023/Ember",
+      "description": "A clean, lightweight Task Manager.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Ember/main/src/Ember/Assets/ember.ico",
+      "exe": "Ember.exe",
+      "install": { "type": "velopack", "packId": "Ember", "asset": "Ember-win-Setup.exe" }
+    },
+    {
+      "id": "marq",
+      "name": "Marq",
+      "repo": "larosa023/Marq",
+      "description": "A tiny snipping tool that lives in the tray.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Marq/main/assets/marq.png",
+      "exe": "Marq.exe",
+      "install": { "type": "portable", "asset": "Marq.exe", "dir": "%LOCALAPPDATA%\\Programs\\Marq" }
+    },
+    {
+      "id": "mantel",
+      "name": "Mantel",
+      "repo": "larosa023/Mantel",
+      "description": "Clean desktop widgets, no skins or scripts.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Mantel/main/src/Mantel/Assets/mantel.ico",
+      "exe": "Mantel.exe",
+      "install": { "type": "velopack", "packId": "Mantel", "asset": "Mantel-win-Setup.exe", "betaAsset": "Mantel-beta-Setup.exe" }
+    },
+    {
+      "id": "faderly",
+      "name": "Faderly",
+      "repo": "larosa023/Faderly",
+      "description": "A per-app volume mixer.",
+      "category": "audio",
+      "icon": "https://raw.githubusercontent.com/larosa023/Faderly/main/src/Faderly/Assets/Faderly.png",
+      "exe": "Faderly.exe",
+      "install": { "type": "velopack", "packId": "Faderly", "asset": "Faderly-win-Setup.exe" },
+      "critical": true
+    },
+    {
+      "id": "tonely",
+      "name": "Tonely",
+      "repo": "larosa023/Tonely",
+      "description": "A system-wide equalizer.",
+      "category": "audio",
+      "icon": "https://raw.githubusercontent.com/larosa023/Tonely/main/src/Tonely/Assets/tonely.png",
+      "exe": "Tonely.exe",
+      "install": { "type": "velopack", "packId": "Tonely", "asset": "Tonely-win-Setup.exe" }
+    },
+    {
+      "id": "lumora",
+      "name": "Lumora",
+      "repo": "larosa023/Lumora",
+      "description": "One app for all your RGB lighting.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Lumora/main/src-tauri/icons/icon.png",
+      "exe": "Lumora.exe",
+      "install": { "type": "nsis", "asset": "Lumora_*_x64-setup.exe", "registry": "Lumora" }
+    },
+    {
+      "id": "savor",
+      "name": "Savor",
+      "repo": "larosa023/Savor-",
+      "description": "Record and clip your best moments.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Savor-/main/docs/icon.png",
+      "exe": "Savor.exe",
+      "install": { "type": "portable", "asset": "Savor.exe", "dir": "%LOCALAPPDATA%\\Programs\\Savor" }
+    },
+    {
+      "id": "cinder",
+      "name": "Cinder",
+      "repo": "larosa023/Cinder",
+      "description": "A fast, themeable front end for your Steam library.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Cinder/main/assets/cinder.png",
+      "exe": "Cinder.exe",
+      "install": { "type": "portable", "asset": "Cinder.exe", "dir": "%LOCALAPPDATA%\\Programs\\Cinder" }
+    },
+    {
+      "id": "relic",
+      "name": "Relic",
+      "repo": "larosa023/Relic",
+      "description": "A couch-mode launcher for your RetroArch games.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Relic/main/assets/relic.png",
+      "exe": "Relic.exe",
+      "install": { "type": "portable", "asset": "Relic.exe", "dir": "%LOCALAPPDATA%\\Programs\\Relic" }
+    },
+    {
+      "id": "downtime",
+      "name": "Downtime",
+      "repo": "larosa023/Downtime",
+      "description": "Classic desk games, done cleanly.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Downtime/main/src-tauri/icons/icon.png",
+      "exe": "Downtime.exe",
+      "install": { "type": "nsis", "asset": "Downtime_*_x64-setup.exe", "registry": "Downtime" }
+    },
+    {
+      "id": "driftcord",
+      "name": "Driftcord",
+      "repo": "larosa023/Driftcord",
+      "description": "A lightweight, debloated Discord client.",
+      "category": "media",
+      "icon": "https://raw.githubusercontent.com/larosa023/Driftcord/main/src-tauri/icons/128x128.png",
+      "exe": "Driftcord.exe",
+      "install": { "type": "nsis", "asset": "Driftcord_*_x64-setup.exe", "registry": "Driftcord" }
+    },
+    {
+      "id": "amplite",
+      "name": "Amplite",
+      "repo": "larosa023/Amplite",
+      "description": "A lightweight Spotify client with themes and a mini amp.",
+      "category": "media",
+      "icon": "https://raw.githubusercontent.com/larosa023/Amplite/main/build/icon.png",
+      "exe": "Amplite.exe",
+      "install": { "type": "nsis", "asset": "Amplite-Setup-*.exe", "registry": "Amplite" }
+    },
+    {
+      "id": "prism",
+      "name": "Prism",
+      "repo": "larosa023/Prism",
+      "description": "An ad-light stream client, Twitch first.",
+      "category": "media",
+      "icon": "https://raw.githubusercontent.com/larosa023/Prism/main/build/icon.png",
+      "exe": "Prism.exe",
+      "install": { "type": "nsis", "asset": "Prism-Setup-*.exe", "registry": "Prism" }
+    },
+    {
+      "id": "ripple",
+      "name": "Ripple",
+      "repo": "larosa023/Ripple",
+      "description": "A clean Stremio client.",
+      "category": "media",
+      "icon": "https://raw.githubusercontent.com/larosa023/Ripple/main/src-tauri/icons/icon.png",
+      "exe": "Ripple.exe",
+      "install": { "type": "nsis", "asset": "Ripple_*_x64-setup.exe", "registry": "Ripple" }
+    },
+    {
+      "id": "fullcourt",
+      "name": "Fullcourt",
+      "repo": "larosa023/fullcourt",
+      "description": "Fullcourt for Windows: the NBA, all in one place.",
+      "category": "media",
+      "icon": "https://raw.githubusercontent.com/larosa023/fullcourt/main/icon-192.png",
+      "exe": "Fullcourt.exe",
+      "tagPrefix": "desktop-v",
+      "install": { "type": "nsis", "asset": "Fullcourt-Setup.exe", "registry": "Fullcourt" }
+    },
+    {
+      "id": "drift",
+      "name": "Drift",
+      "repo": "larosa023/drift-browser",
+      "description": "A Chromium browser with vertical tabs and shields.",
+      "category": "work",
+      "icon": "https://raw.githubusercontent.com/larosa023/drift-browser/main/build/icon.png",
+      "exe": "Drift.exe",
+      "install": { "type": "nsis", "asset": "Drift-Setup-*.exe", "registry": "Drift" }
+    },
+    {
+      "id": "gridline",
+      "name": "Gridline",
+      "repo": "larosa023/Gridline",
+      "description": "Construction takeoff and estimating.",
+      "category": "work",
+      "icon": "https://raw.githubusercontent.com/larosa023/Gridline/main/build/icon.png",
+      "exe": "Gridline.exe",
+      "install": { "type": "nsis", "asset": "Gridline-Setup-*.exe", "registry": "Gridline" }
+    }
+  ]
+}
