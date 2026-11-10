@@ -9,6 +9,7 @@
 #include "net.h"
 #include <windowsx.h>
 #include <shellapi.h>
+#include <commdlg.h>
 #include <dwmapi.h>
 #include <algorithm>
 #include <cmath>
@@ -45,7 +46,7 @@ enum class Page { Library, Details, Settings };
 
 enum class Hit {
     None, Nav, Search, SearchClear, ViewGrid, ViewList, Refresh, UpdateAll, Card, CardAction, Back,
-    DAction, DCancel, DOpenFolder, DRepair, DUninstall, DChannel, DReleasePage, DRepo,
+    DAction, DCancel, DOpenFolder, DRepair, DUninstall, DLocate, DChannel, DReleasePage, DRepo,
     SetTheme, SetChannel, SetHours, SetCheckNow, SetOpenData, SetOpenLog, SetLocalManifest, SetRepo, ToastClose,
 };
 
@@ -286,6 +287,25 @@ static void Uninstall(int i) {
     StartOp(i, OpKind::Uninstall, nullptr);
 }
 
+// For a copy Hangar couldn't find by itself (say, an exe kept in a tools folder)
+static void Locate(int i) {
+    AppState& a = g_apps[i];
+    wchar_t file[MAX_PATH * 2] = {};
+    std::wstring filter = a.def.exe + L'\0' + a.def.exe + L'\0' + L"Programs (*.exe)" + L'\0' + L"*.exe" + L'\0' + L'\0';
+    std::wstring title = L"Where is " + a.def.name + L"?";
+    OPENFILENAMEW ofn{sizeof(ofn)};
+    ofn.hwndOwner = g_hwnd;
+    ofn.lpstrFilter = filter.c_str();
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH * 2;
+    ofn.lpstrTitle = title.c_str();
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameW(&ofn)) return;
+    RememberLocation(a.def.id, file);
+    jobs::Scan({a.def});
+    Toast(a.def.name + L" found.");
+}
+
 static void OpenFolder(AppState& a) {
     if (a.inst.dir.empty()) return;
     ShellExecuteW(g_hwnd, L"open", a.inst.dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -296,6 +316,7 @@ static void OpenUrl(const std::wstring& url) { ShellExecuteW(g_hwnd, L"open", ur
 // ---------------------------------------------------------------- refresh
 static void ScanAll() {
     g_lastScan = GetTickCount();
+    InvalidateDiscoveryCache();
     jobs::Scan(g_manifest.apps);
 }
 
@@ -928,6 +949,10 @@ static void DrawDetails(float x0) {
         w = ButtonWidth(L"Uninstall", icon::Delete);
         Button(D2D1::RectF(bx, y, bx + w, y + 34), L"Uninstall", icon::Delete, Btn::Danger, Hit::DUninstall, g_detail, 0, !a.busy);
         bx += w + 10;
+    } else if (!a.busy) {
+        float w = ButtonWidth(L"Already installed? Locate it", icon::Search);
+        Button(D2D1::RectF(bx, y, bx + w, y + 34), L"Already installed? Locate it", icon::Search, Btn::Subtle, Hit::DLocate, g_detail);
+        bx += w + 10;
     }
     y += 46;
     if (a.busy) {
@@ -1252,6 +1277,7 @@ static void Click(const HotRect& h) {
         case Hit::DOpenFolder: OpenFolder(g_apps[h.index]); break;
         case Hit::DRepair: Repair(h.index); break;
         case Hit::DUninstall: Uninstall(h.index); break;
+        case Hit::DLocate: Locate(h.index); break;
         case Hit::DChannel: SetAppChannel(g_apps[h.index].def.id, h.arg == 1); ConfigSave(); break;
         case Hit::DReleasePage:
             if (h.arg >= 0 && h.arg < (int)g_apps[h.index].releases.size()) OpenUrl(g_apps[h.index].releases[h.arg].page);
@@ -1468,6 +1494,7 @@ static void OnOpDone(OpDone* d) {
     a->percent = -1;
     if (d->ok) {
         a->lastError.clear();
+        if (d->kind == OpKind::Uninstall) ForgetLocation(a->def.id);
         Toast(d->message);
     } else if (d->cancelled) {
         a->lastError.clear();

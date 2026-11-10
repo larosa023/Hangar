@@ -52,6 +52,9 @@ std::wstring Sha256File(const std::wstring& path);
 // Exe version resource (ProductVersion string, else the fixed file version)
 std::wstring ExeVersion(const std::wstring& exe);
 
+// Version-resource strings (CompanyName, ProductName, FileDescription); empty when absent
+void ExeStrings(const std::wstring& exe, std::wstring& company, std::wstring& product, std::wstring& description);
+
 // Processes
 bool RunAndWait(const std::wstring& exe, const std::wstring& args, DWORD timeoutMs, DWORD* exitCode, bool hidden);
 bool LaunchDetached(const std::wstring& exe, const std::wstring& args, DWORD* pid = nullptr);

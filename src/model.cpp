@@ -5,6 +5,10 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <algorithm>
+#include <mutex>
+#include <map>
+#include <ctime>
+#include "json.h"
 
 // ---------------------------------------------------------------- manifest
 std::wstring InstallTypeName(InstallType t) {
@@ -239,7 +243,10 @@ static std::vector<UninstallEntry> FindUninstallEntries(const std::wstring& name
 
 std::wstring PortableDir(const AppDef& def) { return ExpandEnv(def.dir); }
 
-Installed DetectInstalled(const AppDef& def) {
+static std::wstring CommandExe(const std::wstring& cmd0);
+static std::vector<std::wstring> ExeNames(const AppDef& def);
+
+static Installed DetectRegistered(const AppDef& def) {
     Installed in;
     if (def.type == InstallType::Portable) {
         std::wstring dir = PortableDir(def);
@@ -283,6 +290,12 @@ Installed DetectInstalled(const AppDef& def) {
             if (FileExists(root + L"\\current\\" + def.exe)) exe = root + L"\\current\\" + def.exe;
         }
         if (exe.empty()) exe = ExeFromIcon(e.icon);
+        if ((exe.empty() || !FileExists(exe)) && !e.uninstall.empty()) {
+            // electron-builder points DisplayIcon at an .ico when a custom uninstaller icon is set
+            std::wstring un = CommandExe(e.uninstall);
+            for (auto& n : ExeNames(def))
+                if (!un.empty() && FileExists(PathParent(un) + L"\\" + n)) { exe = PathParent(un) + L"\\" + n; break; }
+        }
         if ((exe.empty() || !FileExists(exe)) && !e.location.empty()) {
             std::wstring loc = e.location;
             if (!loc.empty() && loc.front() == L'"') loc = loc.substr(1, loc.size() - 2);
@@ -301,6 +314,240 @@ Installed DetectInstalled(const AppDef& def) {
         in.machineWide = e.machine;
         break;
     }
+    return in;
+}
+
+
+// ---------------------------------------------------------------- remembered locations
+static std::mutex s_locLock;
+static std::map<std::wstring, std::wstring> s_loc;
+static bool s_locLoaded = false;
+
+static std::wstring LocPath() { return DataDir() + L"\\locations.json"; }
+
+static void LoadLocationsLocked() {
+    if (s_locLoaded) return;
+    s_locLoaded = true;
+    std::wstring text;
+    json::Value v;
+    if (ReadTextFile(LocPath(), text) && json::Parser(text).Parse(v) && v.type == json::Value::Object)
+        for (auto& kv : v.obj) if (kv.second.type == json::Value::String) s_loc[kv.first] = kv.second.s;
+}
+
+static void SaveLocationsLocked() {
+    json::Value v = json::Value::MakeObject();
+    for (auto& kv : s_loc) v.Set(kv.first, json::Value::Str(kv.second));
+    std::wstring out;
+    json::Write(v, out);
+    WriteTextFileAtomic(LocPath(), out);
+}
+
+void RememberLocation(const std::wstring& id, const std::wstring& exe) {
+    std::lock_guard<std::mutex> g(s_locLock);
+    LoadLocationsLocked();
+    if (s_loc[id] == exe) return;
+    s_loc[id] = exe;
+    SaveLocationsLocked();
+    Log(L"%ls: remembered at %ls", id.c_str(), exe.c_str());
+}
+
+void ForgetLocation(const std::wstring& id) {
+    std::lock_guard<std::mutex> g(s_locLock);
+    LoadLocationsLocked();
+    if (s_loc.erase(id)) SaveLocationsLocked();
+}
+
+std::wstring RememberedLocation(const std::wstring& id) {
+    std::lock_guard<std::mutex> g(s_locLock);
+    LoadLocationsLocked();
+    auto it = s_loc.find(id);
+    return it == s_loc.end() ? L"" : it->second;
+}
+
+// ---------------------------------------------------------------- discovery
+// Apps that were never "installed" (run from Downloads, a tools folder, a USB stick…) still
+// leave traces: a running process, a startup entry, a Start menu or desktop shortcut.
+static std::mutex s_discLock;
+static std::multimap<std::wstring, std::wstring> s_disc;   // lowercase exe file name -> full path
+static long long s_discAt = 0;
+
+void InvalidateDiscoveryCache() {
+    std::lock_guard<std::mutex> g(s_discLock);
+    s_discAt = 0;
+}
+
+static std::wstring CommandExe(const std::wstring& cmd0) {
+    std::wstring cmd = ExpandEnv(Trim(cmd0));
+    if (cmd.empty()) return L"";
+    if (cmd[0] == L'"') {
+        size_t e = cmd.find(L'"', 1);
+        return e == std::wstring::npos ? L"" : cmd.substr(1, e - 1);
+    }
+    size_t p = Lower(cmd).find(L".exe");
+    return p == std::wstring::npos ? L"" : cmd.substr(0, p + 4);
+}
+
+static void AddDiscovered(const std::wstring& path) {
+    if (path.empty() || !IContains(path, L".exe")) return;
+    std::wstring key = Lower(PathName(path));
+    auto range = s_disc.equal_range(key);
+    for (auto it = range.first; it != range.second; ++it) if (IEquals(it->second, path)) return;
+    s_disc.emplace(key, path);
+}
+
+static void ScanRunKeys() {
+    struct { HKEY root; const wchar_t* path; REGSAM view; } keys[] = {
+        {HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0},
+        {HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", KEY_WOW64_64KEY},
+        {HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", KEY_WOW64_32KEY},
+    };
+    for (auto& k : keys) {
+        HKEY h;
+        if (RegOpenKeyExW(k.root, k.path, 0, KEY_READ | k.view, &h) != ERROR_SUCCESS) continue;
+        wchar_t name[512];
+        BYTE data[4096];
+        for (DWORD i = 0;; ++i) {
+            DWORD nl = 512, dl = sizeof(data) - 2, type = 0;
+            if (RegEnumValueW(h, i, name, &nl, nullptr, &type, data, &dl) != ERROR_SUCCESS) break;
+            if (type != REG_SZ && type != REG_EXPAND_SZ) continue;
+            data[dl] = 0; data[dl + 1] = 0;
+            AddDiscovered(CommandExe((const wchar_t*)data));
+        }
+        RegCloseKey(h);
+    }
+}
+
+static void ScanShortcuts(const std::wstring& dir, int depth, IShellLinkW* link, IPersistFile* pf) {
+    if (dir.empty() || depth < 0) return;
+    WIN32_FIND_DATAW fd;
+    HANDLE f = FindFirstFileW((dir + L"\\*").c_str(), &fd);
+    if (f == INVALID_HANDLE_VALUE) return;
+    do {
+        std::wstring n = fd.cFileName;
+        if (n == L"." || n == L"..") continue;
+        std::wstring p = dir + L"\\" + n;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) { ScanShortcuts(p, depth - 1, link, pf); continue; }
+        if (n.size() < 4 || !IEquals(n.substr(n.size() - 4), L".lnk")) continue;
+        if (FAILED(pf->Load(p.c_str(), STGM_READ))) continue;
+        wchar_t target[MAX_PATH * 2] = {};
+        if (SUCCEEDED(link->GetPath(target, MAX_PATH * 2, nullptr, SLGP_RAWPATH))) AddDiscovered(ExpandEnv(target));
+    } while (FindNextFileW(f, &fd));
+    FindClose(f);
+}
+
+static void ScanProcessesForPaths() {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+    PROCESSENTRY32W pe{sizeof(pe)};
+    for (BOOL ok = Process32FirstW(snap, &pe); ok; ok = Process32NextW(snap, &pe)) {
+        if (pe.th32ProcessID <= 4) continue;
+        HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
+        if (!h) continue;
+        wchar_t path[MAX_PATH * 2];
+        DWORD len = MAX_PATH * 2;
+        if (QueryFullProcessImageNameW(h, 0, path, &len)) AddDiscovered(std::wstring(path, len));
+        CloseHandle(h);
+    }
+    CloseHandle(snap);
+}
+
+static void RefreshDiscoveryLocked() {
+    long long now = (long long)time(nullptr);
+    if (s_discAt && now - s_discAt < 20) return;
+    s_discAt = now;
+    s_disc.clear();
+    ScanProcessesForPaths();
+    ScanRunKeys();
+    IShellLinkW* link = nullptr;
+    IPersistFile* pf = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) &&
+        SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(&pf)))) {
+        ScanShortcuts(KnownFolder(FOLDERID_Programs), 3, link, pf);
+        ScanShortcuts(KnownFolder(FOLDERID_CommonPrograms), 3, link, pf);
+        ScanShortcuts(KnownFolder(FOLDERID_Startup), 1, link, pf);
+        ScanShortcuts(KnownFolder(FOLDERID_Desktop), 1, link, pf);
+        ScanShortcuts(KnownFolder(FOLDERID_PublicDesktop), 1, link, pf);
+        ScanShortcuts(KnownFolder(FOLDERID_UserPinned) + L"\\TaskBar", 1, link, pf);
+    }
+    if (pf) pf->Release();
+    if (link) link->Release();
+}
+
+// Is this exe really ours, and not some other program with the same file name?
+static bool LooksLikeApp(const AppDef& def, const std::wstring& exe) {
+    if (!FileExists(exe)) return false;
+    std::wstring company, product, desc;
+    ExeStrings(exe, company, product, desc);
+    if (company.empty() && product.empty() && desc.empty()) return true;   // no version info to go on
+    if (IContains(company, L"larosa") || IContains(company, def.owner)) return true;
+    for (auto* s : {&product, &desc})
+        if (IContains(*s, def.name) || IContains(*s, def.id) || IContains(*s, def.packId) || IContains(*s, def.registry)) return true;
+    return false;
+}
+
+static std::vector<std::wstring> ExeNames(const AppDef& def) {
+    std::vector<std::wstring> names{def.exe};
+    // Rust and Tauri builds are often lowercase (marq.exe); Tauri may keep the crate name
+    std::wstring lower = Lower(def.exe);
+    if (lower != def.exe) names.push_back(lower);
+    return names;
+}
+
+static std::wstring Discover(const AppDef& def) {
+    // 1. folders apps commonly live in
+    std::vector<std::wstring> dirs = {
+        PortableDir(def),
+        KnownFolder(FOLDERID_UserProgramFiles) + L"\\" + def.name,
+        KnownFolder(FOLDERID_LocalAppData) + L"\\" + def.name,
+        KnownFolder(FOLDERID_LocalAppData) + L"\\" + def.packId + L"\\current",
+        KnownFolder(FOLDERID_RoamingAppData) + L"\\" + def.name,
+        KnownFolder(FOLDERID_ProgramFiles) + L"\\" + def.name,
+        KnownFolder(FOLDERID_ProgramFilesX86) + L"\\" + def.name,
+    };
+    for (auto& d : dirs)
+        for (auto& n : ExeNames(def))
+            if (!d.empty() && LooksLikeApp(def, d + L"\\" + n)) return d + L"\\" + n;
+    // 2. App Paths
+    for (HKEY root : {HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE}) {
+        std::wstring key = L"Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\" + def.exe;
+        wchar_t buf[1024];
+        DWORD size = sizeof(buf);
+        if (RegGetValueW(root, key.c_str(), nullptr, RRF_RT_REG_SZ, nullptr, buf, &size) == ERROR_SUCCESS) {
+            std::wstring p = CommandExe(buf);
+            if (LooksLikeApp(def, p)) return p;
+        }
+    }
+    // 3. running processes, startup entries and shortcuts
+    std::lock_guard<std::mutex> g(s_discLock);
+    RefreshDiscoveryLocked();
+    auto range = s_disc.equal_range(Lower(def.exe));
+    for (auto it = range.first; it != range.second; ++it)
+        if (!IContains(it->second, L"\\Temp\\") && LooksLikeApp(def, it->second)) return it->second;
+    return L"";
+}
+
+static Installed FromExe(const AppDef& def, const std::wstring& exe) {
+    Installed in;
+    in.installed = true;
+    in.exe = exe;
+    in.dir = PathParent(exe);
+    if (def.type == InstallType::Velopack && IEquals(PathName(in.dir), L"current")) in.dir = PathParent(in.dir);
+    in.version = ExeVersion(exe);
+    return in;
+}
+
+Installed DetectInstalled(const AppDef& def) {
+    Installed in = DetectRegistered(def);
+    if (in.installed) { RememberLocation(def.id, in.exe); return in; }
+    std::wstring known = RememberedLocation(def.id);
+    if (!known.empty() && FileExists(known)) return FromExe(def, known);
+    std::wstring found = Discover(def);
+    if (!found.empty()) {
+        Log(L"%ls: found at %ls", def.id.c_str(), found.c_str());
+        RememberLocation(def.id, found);
+        return FromExe(def, found);
+    }
+    if (!known.empty()) ForgetLocation(def.id);
     return in;
 }
 

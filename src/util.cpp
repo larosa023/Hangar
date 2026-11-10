@@ -349,6 +349,28 @@ std::wstring ExeVersion(const std::wstring& exe) {
     return L"";
 }
 
+void ExeStrings(const std::wstring& exe, std::wstring& company, std::wstring& product, std::wstring& description) {
+    company.clear(); product.clear(); description.clear();
+    DWORD dummy = 0;
+    DWORD n = GetFileVersionInfoSizeW(exe.c_str(), &dummy);
+    if (!n) return;
+    std::vector<BYTE> buf(n);
+    if (!GetFileVersionInfoW(exe.c_str(), 0, n, buf.data())) return;
+    struct LangCp { WORD lang, cp; } *tr = nullptr;
+    UINT len = 0;
+    if (!VerQueryValueW(buf.data(), L"\\VarFileInfo\\Translation", (void**)&tr, &len) || len < sizeof(LangCp)) return;
+    auto get = [&](const wchar_t* name) {
+        wchar_t key[128];
+        swprintf(key, 128, L"\\StringFileInfo\\%04x%04x\\%ls", tr[0].lang, tr[0].cp, name);
+        wchar_t* val = nullptr;
+        UINT vl = 0;
+        return (VerQueryValueW(buf.data(), key, (void**)&val, &vl) && vl > 1) ? Trim(val) : std::wstring();
+    };
+    company = get(L"CompanyName");
+    product = get(L"ProductName");
+    description = get(L"FileDescription");
+}
+
 // ---------------------------------------------------------------- processes
 static bool Spawn(const std::wstring& exe, const std::wstring& args, bool hidden, PROCESS_INFORMATION* pi) {
     std::wstring cmd = L"\"" + exe + L"\"";

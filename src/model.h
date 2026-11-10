@@ -66,6 +66,13 @@ struct Installed {
 };
 
 Installed DetectInstalled(const AppDef& def);
+
+// Locations the user picked with "Locate…" or that Hangar found an app running from.
+// Stored in DataDir()\locations.json; thread-safe.
+void RememberLocation(const std::wstring& id, const std::wstring& exe);
+void ForgetLocation(const std::wstring& id);
+std::wstring RememberedLocation(const std::wstring& id);
+void InvalidateDiscoveryCache();   // the next scan looks at shortcuts, startup entries and processes again
 std::wstring PortableDir(const AppDef& def);
 
 // ---------------------------------------------------------------- running processes

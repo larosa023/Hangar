@@ -15,5 +15,5 @@ if(MSVC)
   target_compile_options(Hangar PRIVATE /W4 /utf-8 /permissive-)
   target_link_options(Hangar PRIVATE /MANIFEST:NO /ENTRY:wWinMainCRTStartup)   # manifest comes from hangar.rc
 endif()
-target_link_libraries(Hangar PRIVATE d2d1 dwrite ole32 oleaut32 uuid dwmapi shcore shell32 user32 gdi32 advapi32 shlwapi windowscodecs comctl32 uxtheme winhttp bcrypt version)
+target_link_libraries(Hangar PRIVATE d2d1 dwrite ole32 oleaut32 uuid dwmapi shcore shell32 user32 gdi32 advapi32 shlwapi windowscodecs comctl32 uxtheme winhttp bcrypt version comdlg32)
 set_target_properties(Hangar PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/dist)

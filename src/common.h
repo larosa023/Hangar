@@ -17,7 +17,7 @@
 #include <vector>
 #include <cstdint>
 
-#define HANGAR_VERSION L"0.1.0"
+#define HANGAR_VERSION L"0.1.1"
 #define HANGAR_REPO_OWNER L"larosa023"
 #define HANGAR_REPO_NAME L"Hangar"
 #define HANGAR_MANIFEST_URL L"https://raw.githubusercontent.com/larosa023/Hangar/main/manifest.json"

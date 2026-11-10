@@ -1,11 +1,9 @@
-## Hangar 0.1.0 (Phase 1)
+## Hangar 0.1.1
 
-The first build of Hangar, home base for the larosa023 apps.
+**Finds your apps wherever they are.** Before, Hangar only looked in each app's standard install folder, so apps you run from somewhere else showed "Install". Now it also checks:
+- apps that are running right now
+- startup entries (the Windows "Run" list) and Start menu, desktop and taskbar shortcuts
+- common folders: `%LOCALAPPDATA%\<App>`, `%APPDATA%\<App>`, `Program Files`
+- Apps & features entries whose icon isn't the exe (fixes Gridline)
 
-- **Library** of all 21 apps in the suite, in a grid or a list, with categories, search (Ctrl+K) and keyboard navigation. It opens straight away from a cache, then refreshes in the background.
-- **Shows what's installed and running**, including apps you installed before Hangar existed.
-- **Release checks** against each app's GitHub Releases, on the Stable or Beta channel, with very little use of GitHub's rate limit.
-- **One-click Install, Open, Update, Repair and Uninstall.** It handles single-exe apps, NSIS setups (Electron and Tauri apps) and Velopack setups.
-- **Verified downloads:** SHA-256 against GitHub's digest and the app's own checksum file.
-- **Updating an open app:** Hangar closes it the normal way, updates it, and reopens it. If the new version doesn't start, the previous one comes back.
-- **Update all**, a page per app with release history, and Settings (theme, default channel, check interval, local manifest).
+Hangar checks each exe's version info so it doesn't mistake another program with the same file name for one of yours, and it remembers where each app was found. If an app still isn't found, open its page and click **Already installed? Locate it**.
