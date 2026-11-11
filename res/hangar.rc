@@ -2,10 +2,11 @@
 1 ICON "hangar.ico"
 1 RT_MANIFEST "hangar.manifest"
 100 RCDATA "../manifest.json"
+101 RCDATA "../CHANGELOG-latest.md"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,1,1,0
- PRODUCTVERSION 0,1,1,0
+ FILEVERSION 0,1,2,0
+ PRODUCTVERSION 0,1,2,0
  FILEOS VOS_NT_WINDOWS32
  FILETYPE VFT_APP
 BEGIN
@@ -15,9 +16,9 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "larosa023"
       VALUE "FileDescription", "Hangar"
-      VALUE "FileVersion", "0.1.1"
+      VALUE "FileVersion", "0.1.2"
       VALUE "ProductName", "Hangar"
-      VALUE "ProductVersion", "0.1.1"
+      VALUE "ProductVersion", "0.1.2"
       VALUE "LegalCopyright", "larosa023"
       VALUE "OriginalFilename", "Hangar.exe"
     END

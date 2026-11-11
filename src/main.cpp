@@ -10,14 +10,33 @@
 #include <objbase.h>
 #include <shellapi.h>
 #include <shobjidl.h>
+#include "selfupdate.h"
 
 static HANDLE g_mutex;
+static const wchar_t* kMutexName = L"Local\\Hangar.larosa023.SingleInstance";
+
+void ReleaseInstanceMutex() {
+    if (g_mutex) { ReleaseMutex(g_mutex); CloseHandle(g_mutex); g_mutex = nullptr; }
+}
+void ReacquireInstanceMutex() {
+    if (!g_mutex) g_mutex = CreateMutexW(nullptr, TRUE, kMutexName);
+}
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int show) {
     if (wcsstr(cmdLine, L"--version")) return 0;
 
-    g_mutex = CreateMutexW(nullptr, TRUE, L"Local\\Hangar.larosa023.SingleInstance");
-    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+    selfupdate::AfterUpdate after = selfupdate::ParseArgs(GetCommandLineW());
+    g_mutex = CreateMutexW(nullptr, TRUE, kMutexName);
+    if (GetLastError() == ERROR_ALREADY_EXISTS && after.active) {
+        // the copy we're replacing is letting go; give it a moment
+        CloseHandle(g_mutex);
+        g_mutex = nullptr;
+        for (int i = 0; i < 50 && !g_mutex; ++i) {
+            Sleep(100);
+            HANDLE m = CreateMutexW(nullptr, TRUE, kMutexName);
+            if (GetLastError() != ERROR_ALREADY_EXISTS) g_mutex = m; else CloseHandle(m);
+        }
+    } else if (GetLastError() == ERROR_ALREADY_EXISTS) {
         if (HWND existing = FindWindowW(L"Hangar.larosa023.Main", nullptr)) {
             DWORD pid = 0;
             GetWindowThreadProcessId(existing, &pid);
@@ -35,7 +54,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int show) {
     ConfigLoad();
     net::Init();
 
-    HWND hwnd = UiCreate(inst, show);
+    HWND hwnd = UiCreate(inst, show, after);
     if (!hwnd) {
         MessageBoxW(nullptr, L"Hangar couldn't start. Details are in hangar.log.", L"Hangar", MB_ICONERROR);
         return 1;

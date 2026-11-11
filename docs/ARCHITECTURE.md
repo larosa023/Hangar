@@ -50,6 +50,18 @@ Hangar installs portable apps in exactly the place the apps install themselves. 
 - **Verification:** every download is checked with SHA-256 against GitHub's asset digest. When the app publishes a checksum file (`SHA256SUMS.txt`, `Switch.exe.sha256`), Hangar also checks against that, and both must agree. A release with no checksum is refused.
 - **Updating an app that's running (Phase 1 fallback):** Hangar closes the app gracefully (with `--quit` if the app supports it, otherwise `WM_CLOSE`). It never kills an app. Then it installs the new version and reopens the app. For single-exe apps the old exe is kept as `.old` until the new one has run for 4 seconds; if the new one fails, Hangar restores the old one and reopens it.
 
+### Hangar's own updater (`selfupdate.cpp`, from 0.1.2)
+
+Hangar is one exe that can live anywhere, so it updates itself like this:
+1. A background job checks `larosa023/Hangar` releases (Stable, or Beta for pre-releases), downloads `Hangar.exe` to `updates\<ver>\`, and checks its SHA-256 against both GitHub's digest and `SHA256SUMS.txt`.
+2. When you click **Restart to update**, or automatically once Hangar is minimized or the PC has been idle for 2 minutes, and only when no installs are running, Hangar:
+   - saves where you are (page, app, search, scroll)
+   - renames its exe to `Hangar.exe.old`, copies the new exe into its place and hides its window
+   - starts the new exe with `--after-update`
+3. The new copy opens on the same page and sets a named "healthy" event once its window is drawn. The old copy then exits.
+4. If the event doesn't arrive within 20 s, or the new copy quits, the old copy deletes the new exe, renames itself back, shows its window again, and adds that version to `skipVersion`.
+5. The new copy keeps the previous exe in `versions\<ver>\` (the last 2). **Settings → Hangar updates → Roll back** uses the same handoff.
+
 ## 4. Project structure
 
 ```
@@ -63,6 +75,7 @@ Hangar/
 │  ├─ gfx.cpp             Direct2D/DirectWrite helpers, theme
 │  ├─ model.cpp           manifest + releases parsing, install detection, process scan
 │  ├─ jobs.cpp            background work: fetch, download + verify, install/update/uninstall
+│  ├─ selfupdate.cpp      Hangar's own updater: check, stage, handoff, rollback
 │  ├─ net.cpp             WinHTTP
 │  ├─ config.cpp          settings.json
 │  ├─ util.cpp            paths, strings, versions, SHA-256, logging
@@ -77,8 +90,8 @@ Data lives in `%LOCALAPPDATA%\Hangar\`: `settings.json`, `hangar.log`, `cache\` 
 
 ## 5. Phases
 
-1. **Library, manifest, release checks, install/launch/update/uninstall** ✅ (this build)
-2. Versioned installs (`Hangar\apps\<App>\<ver>\` behind a launcher stub), Hangar's own updater, keeping the last N versions, manual rollback, parallel "Update all" with idle and game rules
+1. **Library, manifest, release checks, install/launch/update/uninstall** ✅ (0.1.0–0.1.1)
+2. **Hangar's own updater with rollback** ✅ (0.1.2). Still to do: versioned app installs (`Hangar\apps\<App>\<ver>\` behind a launcher stub), keeping the last N app versions with manual rollback, parallel "Update all" with idle and game rules
 3. SDK + IPC + state save/restore + live updates, starting with Strata as the reference
 4. Themes and suite-wide live theming
 5. Backup/restore, new-PC setup, health dashboard

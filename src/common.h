@@ -17,7 +17,9 @@
 #include <vector>
 #include <cstdint>
 
-#define HANGAR_VERSION L"0.1.1"
+#ifndef HANGAR_VERSION
+#define HANGAR_VERSION L"0.1.2"
+#endif
 #define HANGAR_REPO_OWNER L"larosa023"
 #define HANGAR_REPO_NAME L"Hangar"
 #define HANGAR_MANIFEST_URL L"https://raw.githubusercontent.com/larosa023/Hangar/main/manifest.json"
@@ -33,4 +35,5 @@ enum : UINT {
     WM_HANGAR_OP_PROGRESS,             // lParam: OpProgress*
     WM_HANGAR_OP_DONE,                 // lParam: OpDone*
     WM_HANGAR_ACTIVATE,                // another Hangar.exe asked us to come to the front
+    WM_HANGAR_SELF,                    // lParam: SelfUpdateState* (Hangar's own updater)
 };

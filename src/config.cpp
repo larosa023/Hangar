@@ -20,6 +20,9 @@ void ConfigLoad() {
     if (c.checkHours < 1) c.checkHours = 1;
     if (c.checkHours > 48) c.checkHours = 48;
     c.page = v.GetStr(L"page", c.page);
+    c.hangarBeta = v.GetBool(L"hangarBeta", c.hangarBeta);
+    c.hangarAuto = v.GetBool(L"hangarAuto", c.hangarAuto);
+    c.skipVersion = v.GetStr(L"skipVersion");
     if (const json::Value* w = v.Get(L"window"); w && w->type == json::Value::Object) {
         c.windowX = (int)w->GetNum(L"x", CW_USEDEFAULT);
         c.windowY = (int)w->GetNum(L"y", CW_USEDEFAULT);
@@ -39,6 +42,9 @@ void ConfigSave() {
     v.Set(L"beta", json::Value::Boolean(g_cfg.beta));
     v.Set(L"checkHours", json::Value::Num(g_cfg.checkHours));
     v.Set(L"page", json::Value::Str(g_cfg.page));
+    v.Set(L"hangarBeta", json::Value::Boolean(g_cfg.hangarBeta));
+    v.Set(L"hangarAuto", json::Value::Boolean(g_cfg.hangarAuto));
+    v.Set(L"skipVersion", json::Value::Str(g_cfg.skipVersion));
     json::Value w = json::Value::MakeObject();
     w.Set(L"x", json::Value::Num(g_cfg.windowX));
     w.Set(L"y", json::Value::Num(g_cfg.windowY));
@@ -63,4 +69,42 @@ bool AppUsesBeta(const std::wstring& id) {
 void SetAppChannel(const std::wstring& id, bool beta) {
     if (beta == g_cfg.beta) g_cfg.channel.erase(id);
     else g_cfg.channel[id] = beta ? L"beta" : L"stable";
+}
+
+static std::vector<std::wstring> SkipList() {
+    std::vector<std::wstring> out;
+    size_t i = 0;
+    const std::wstring& s = g_cfg.skipVersion;
+    while (i < s.size()) {
+        size_t e = s.find(L',', i);
+        if (e == std::wstring::npos) e = s.size();
+        std::wstring v = Trim(s.substr(i, e - i));
+        if (!v.empty()) out.push_back(v);
+        i = e + 1;
+    }
+    return out;
+}
+
+static void SetSkipList(const std::vector<std::wstring>& list) {
+    g_cfg.skipVersion.clear();
+    for (auto& v : list) g_cfg.skipVersion += (g_cfg.skipVersion.empty() ? L"" : L",") + v;
+}
+
+bool IsSkippedVersion(const std::wstring& v) {
+    for (auto& s : SkipList()) if (CompareVersions(s, v) == 0) return true;
+    return false;
+}
+
+void SkipVersion(const std::wstring& v) {
+    if (IsSkippedVersion(v)) return;
+    auto list = SkipList();
+    list.push_back(NormalizeVersion(v));
+    SetSkipList(list);
+}
+
+void PruneSkippedVersions(const std::wstring& current) {
+    auto list = SkipList();
+    std::vector<std::wstring> keep;
+    for (auto& v : list) if (CompareVersions(v, current) > 0) keep.push_back(v);
+    SetSkipList(keep);
 }

@@ -73,6 +73,9 @@ void StartOp(const OpRequest& req);
 void CancelOp(const std::wstring& id);
 int ActiveOps();
 
-long long RateLimitedUntil();      // unix seconds; 0 when not rate limited
+long long RateLimitedUntil();
+
+// Finds an asset's hash in a SHA256SUMS-style file ("<hex>  <name>" lines). "" if absent.
+std::wstring ExpectedHashFromSums(const std::string& sums, const std::wstring& assetName);      // unix seconds; 0 when not rate limited
 
 } // namespace jobs

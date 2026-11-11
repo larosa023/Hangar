@@ -7,6 +7,8 @@
 #include "config.h"
 #include "util.h"
 #include "net.h"
+#include "selfupdate.h"
+#include "json.h"
 #include <windowsx.h>
 #include <shellapi.h>
 #include <commdlg.h>
@@ -48,6 +50,7 @@ enum class Hit {
     None, Nav, Search, SearchClear, ViewGrid, ViewList, Refresh, UpdateAll, Card, CardAction, Back,
     DAction, DCancel, DOpenFolder, DRepair, DUninstall, DLocate, DChannel, DReleasePage, DRepo,
     SetTheme, SetChannel, SetHours, SetCheckNow, SetOpenData, SetOpenLog, SetLocalManifest, SetRepo, ToastClose,
+    SelfRestart, SelfCheck, SelfChannel, SelfAuto, SelfRollback, WhatsNewClose,
 };
 
 struct HotRect {
@@ -97,8 +100,17 @@ static bool g_offline = false;
 static DWORD g_lastScan = 0;
 static std::vector<int> g_visible;          // indices into g_apps shown on the library page
 
-enum : UINT_PTR { TIMER_ANIM = 1, TIMER_CARET, TIMER_PROCS, TIMER_CHECK, TIMER_TOAST };
+enum : UINT_PTR { TIMER_ANIM = 1, TIMER_CARET, TIMER_PROCS, TIMER_CHECK, TIMER_TOAST, TIMER_SELF, TIMER_HEALTHY };
 static bool g_animTimer = false;
+
+// Hangar's own updater
+static SelfUpdateState g_self;
+static DWORD g_selfCheckedTick = 0;
+static DWORD g_lastInput = 0;
+static bool g_applyWhenIdle = false;
+static std::wstring g_whatsNew;            // shown once after Hangar updates itself
+static std::wstring g_whatsNewVersion;
+static selfupdate::AfterUpdate g_after;
 
 static void Invalidate() { if (g_hwnd) InvalidateRect(g_hwnd, nullptr, FALSE); }
 static void StartAnim() {
@@ -684,6 +696,14 @@ static void DrawSidebar() {
     }
     // bottom
     float by = g_H - 82;
+    if (g_self.kind == SelfUpdateState::Ready && y + 100 < by) {
+        D2D1_RECT_F b = D2D1::RectF(12, by - 92, kSidebar - 12, by - 8);
+        g_c.FillRound(b, 8, Alpha(g_t.accent, 0.14f));
+        g_c.StrokeRound(b, 8, Alpha(g_t.accent, 0.35f));
+        g_c.Text(L"Hangar " + g_self.version + L" is ready", Format(12.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(b.left + 12, b.top + 8, b.right - 8, b.top + 28), g_t.text);
+        g_c.Text(jobs::ActiveOps() ? L"Installs after the current updates" : L"Takes a second · you stay where you are", Format(11.5f), D2D1::RectF(b.left + 12, b.top + 27, b.right - 8, b.top + 44), g_t.subtext);
+        Button(D2D1::RectF(b.left + 10, b.bottom - 34, b.right - 10, b.bottom - 8), L"Restart to update", icon::Update, Btn::Primary, Hit::SelfRestart);
+    }
     if (y + 10 < by) {
         g_navIds.push_back(L"settings");
         NavItem(by, L"settings", L"Settings", icon::Settings, -1, false, (int)g_navIds.size() - 1);
@@ -1104,6 +1124,44 @@ static void DrawSettings(float x0) {
     Button(D2D1::RectF(right - 140, s2.top + 144, right - 18, s2.top + 176), L"Check now", icon::Refresh, Btn::Secondary, Hit::SetCheckNow);
     y = s2.bottom + 26;
 
+    D2D1_RECT_F s5 = section(L"HANGAR UPDATES", 64 * 3 + (selfupdate::PreviousVersions().empty() ? 0 : 64));
+    {
+        std::wstring status;
+        switch (g_self.kind) {
+            case SelfUpdateState::Checking: status = L"Checking…"; break;
+            case SelfUpdateState::UpToDate: status = std::wstring(L"Up to date · ") + HANGAR_VERSION; break;
+            case SelfUpdateState::Downloading: status = L"Downloading " + g_self.version + (g_self.percent >= 0 ? L" · " + std::to_wstring(g_self.percent) + L"%" : L""); break;
+            case SelfUpdateState::Ready: status = L"Hangar " + g_self.version + L" is downloaded and verified"; break;
+            case SelfUpdateState::Error: status = g_self.message; break;
+            default: status = std::wstring(L"Version ") + HANGAR_VERSION; break;
+        }
+        rowLabel(s5.top + 4, std::wstring(L"Hangar ") + HANGAR_VERSION, status);
+        if (g_self.kind == SelfUpdateState::Ready)
+            Button(D2D1::RectF(right - 170, s5.top + 16, right - 18, s5.top + 48), L"Restart to update", icon::Update, Btn::Primary, Hit::SelfRestart);
+        else
+            Button(D2D1::RectF(right - 170, s5.top + 16, right - 18, s5.top + 48), L"Check now", icon::Refresh, Btn::Secondary, Hit::SelfCheck, -1, 0,
+                   g_self.kind != SelfUpdateState::Checking && g_self.kind != SelfUpdateState::Downloading);
+        g_c.Line(left + 18, s5.top + 64, right - 18, s5.top + 64, g_t.divider);
+        rowLabel(s5.top + 68, L"Hangar's channel", L"Beta gets new Hangar features first");
+        Segmented(right - 200, s5.top + 80, {L"Stable", L"Beta"}, g_cfg.hangarBeta ? 1 : 0, Hit::SelfChannel);
+        g_c.Line(left + 18, s5.top + 128, right - 18, s5.top + 128, g_t.divider);
+        rowLabel(s5.top + 132, L"Install Hangar updates automatically", L"Only when nothing is installing and you're not using Hangar");
+        Segmented(right - 200, s5.top + 144, {L"On", L"Off"}, g_cfg.hangarAuto ? 0 : 1, Hit::SelfAuto);
+        auto prev = selfupdate::PreviousVersions();
+        if (!prev.empty()) {
+            g_c.Line(left + 18, s5.top + 192, right - 18, s5.top + 192, g_t.divider);
+            rowLabel(s5.top + 196, L"Previous versions", L"Go back if a new Hangar gives you trouble");
+            float bx = right - 18;
+            for (size_t k = 0; k < prev.size() && k < 2; ++k) {
+                std::wstring l = L"Roll back to " + prev[k].version;
+                float w = ButtonWidth(l, 0);
+                Button(D2D1::RectF(bx - w, s5.top + 208, bx, s5.top + 240), l, 0, Btn::Secondary, Hit::SelfRollback, -1, (int)k);
+                bx -= w + 8;
+            }
+        }
+    }
+    y = s5.bottom + 26;
+
     D2D1_RECT_F s3 = section(L"ADVANCED", 64 * 3);
     rowLabel(s3.top + 4, L"Data folder", DataDir());
     Button(D2D1::RectF(right - 140, s3.top + 16, right - 18, s3.top + 48), L"Open", icon::Folder, Btn::Secondary, Hit::SetOpenData);
@@ -1115,8 +1173,9 @@ static void DrawSettings(float x0) {
     Button(D2D1::RectF(right - 140, s3.top + 144, right - 18, s3.top + 176), L"Edit", 0, Btn::Secondary, Hit::SetLocalManifest);
     y = s3.bottom + 26;
 
+
     D2D1_RECT_F s4 = section(L"ABOUT", 64);
-    rowLabel(s4.top + 4, std::wstring(L"Hangar ") + HANGAR_VERSION + (IsPortable() ? L" (portable)" : L""), L"Phase 1 build · larosa023");
+    rowLabel(s4.top + 4, std::wstring(L"Hangar ") + HANGAR_VERSION + (IsPortable() ? L" (portable)" : L""), L"larosa023");
     Button(D2D1::RectF(right - 180, s4.top + 16, right - 18, s4.top + 48), L"github.com/larosa023/Hangar", 0, Btn::Subtle, Hit::SetRepo);
     y = s4.bottom + 26;
     g_contentH = y + g_scroll + 10;
@@ -1138,6 +1197,29 @@ static void DrawToast() {
     D2D1_RECT_F x = D2D1::RectF(r.right - 30, r.top + 8, r.right - 6, r.bottom - 8);
     g_c.Glyph(icon::Cancel, Format(9, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER, false, true), x, Alpha(Rgb(0xB0B0BA), g_toastAnim));
     AddHot(r, Hit::ToastClose);
+}
+
+// ---------------------------------------------------------------- what's new (after a self-update)
+static void DrawWhatsNew() {
+    if (g_whatsNew.empty()) return;
+    g_hot.clear();   // the overlay is modal
+    g_c.Fill(D2D1::RectF(0, 0, g_W, g_H), Rgb(0x000000, 0.45f));
+    AddHot(D2D1::RectF(0, 0, g_W, g_H), Hit::WhatsNewClose);
+    float w = std::min(560.0f, g_W - 80);
+    auto* f = Format(13.5f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING, true);
+    float th = std::min(MeasureHeight(g_whatsNew, f, w - 56), g_H - 260);
+    float h = th + 150;
+    D2D1_RECT_F r = D2D1::RectF((g_W - w) / 2, (g_H - h) / 2, (g_W + w) / 2, (g_H + h) / 2);
+    g_c.FillRound(r, 12, g_t.dark ? Rgb(0x1F1F25) : Rgb(0xFFFFFF));
+    g_c.StrokeRound(r, 12, g_t.divider);
+    AddHot(r, Hit::None);
+    g_c.Glyph(icon::Star, Format(18, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER, false, true), D2D1::RectF(r.left + 22, r.top + 22, r.left + 50, r.top + 50), g_t.accent);
+    g_c.Text(L"Hangar updated to " + g_whatsNewVersion, Format(19, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(r.left + 56, r.top + 20, r.right - 24, r.top + 52), g_t.text);
+    g_c.Text(L"You're right where you left off.", Format(12.5f), D2D1::RectF(r.left + 56, r.top + 50, r.right - 24, r.top + 70), g_t.subtext);
+    g_rt->PushAxisAlignedClip(D2D1::RectF(r.left + 28, r.top + 84, r.right - 28, r.top + 84 + th), D2D1_ANTIALIAS_MODE_ALIASED);
+    g_c.Text(g_whatsNew, f, D2D1::RectF(r.left + 28, r.top + 84, r.right - 28, r.top + 84 + th + 4), g_t.subtext);
+    g_rt->PopAxisAlignedClip();
+    Button(D2D1::RectF(r.right - 120, r.bottom - 50, r.right - 24, r.bottom - 18), L"Got it", 0, Btn::Primary, Hit::WhatsNewClose);
 }
 
 // ---------------------------------------------------------------- paint
@@ -1181,6 +1263,7 @@ static void Paint() {
     DrawScrollbar(x0);
     DrawSidebar();
     DrawToast();
+    DrawWhatsNew();
     HRESULT hr = g_rt->EndDraw();
     if (hr == (HRESULT)D2DERR_RECREATE_TARGET) DiscardDevice();
     ClampScroll();
@@ -1256,6 +1339,70 @@ static HotRect HitAt(float x, float y) {
     return {{0, 0, 0, 0}, Hit::None, -1, 0, false};
 }
 
+// ---------------------------------------------------------------- Hangar's own updates
+static void SaveWindowPlacement();
+
+static std::wstring RestoreJson() {
+    json::Value v = json::Value::MakeObject();
+    v.Set(L"page", json::Value::Str(g_page == Page::Details ? L"details" : g_page == Page::Settings ? L"settings" : L"library"));
+    v.Set(L"nav", json::Value::Str(g_nav));
+    v.Set(L"detail", json::Value::Str(g_detail >= 0 && g_detail < (int)g_apps.size() ? g_apps[g_detail].def.id : L""));
+    v.Set(L"search", json::Value::Str(g_search));
+    v.Set(L"scroll", json::Value::Num(g_scrollTarget));
+    v.Set(L"listView", json::Value::Boolean(g_cfg.listView));
+    v.Set(L"background", json::Value::Boolean(GetForegroundWindow() != g_hwnd));
+    v.Set(L"minimized", json::Value::Boolean(IsIconic(g_hwnd) != 0));
+    std::wstring out;
+    json::Write(v, out);
+    return out;
+}
+
+// Restarts into a newer (or, for a rollback, an older) Hangar. Never while apps are installing.
+static void ApplySelf(const std::wstring& exe, const std::wstring& version, bool userAsked) {
+    if (jobs::ActiveOps() > 0) {
+        g_applyWhenIdle = true;
+        if (userAsked) Toast(L"Hangar will restart once the current installs finish.");
+        return;
+    }
+    g_applyWhenIdle = false;
+    SaveWindowPlacement();
+    ConfigSave();
+    selfupdate::SaveRestoreState(RestoreJson());
+    Log(L"self-update: restarting into %ls", version.c_str());
+    std::wstring err;
+    if (selfupdate::Apply(g_hwnd, exe, version, &err)) {
+        jobs::Shutdown();
+        DestroyWindow(g_hwnd);   // the new copy has taken over
+        return;
+    }
+    DeleteFileW((DataDir() + L"\\restore.json").c_str());
+    if (IStartsWith(err, L"Hangar " + version + L" didn't start")) {
+        SkipVersion(version);
+        ConfigSave();
+        g_self = SelfUpdateState{};
+        g_self.kind = SelfUpdateState::Error;
+        g_self.message = err;
+    }
+    Toast(err, true);
+    Log(L"self-update: %ls", err.c_str());
+}
+
+static void MaybeAutoApplySelf() {
+    if (g_self.kind != SelfUpdateState::Ready || jobs::ActiveOps() > 0) return;
+    if (!g_cfg.hangarAuto && !g_applyWhenIdle) return;
+    if (!g_whatsNew.empty()) return;
+    // only when it can't interrupt: Hangar is minimized, or nobody has touched the PC for 2 minutes
+    LASTINPUTINFO li{sizeof(li)};
+    bool idle = GetLastInputInfo(&li) && GetTickCount() - li.dwTime > 2 * 60 * 1000;
+    bool away = IsIconic(g_hwnd) || idle;
+    if (g_applyWhenIdle || away) ApplySelf(g_self.staged, g_self.version, false);
+}
+
+static void CheckSelf(bool force) {
+    g_selfCheckedTick = GetTickCount();
+    selfupdate::Check(g_hwnd, force);
+}
+
 static void Click(const HotRect& h) {
     if (!h.enabled) return;
     switch (h.kind) {
@@ -1310,6 +1457,25 @@ static void Click(const HotRect& h) {
         }
         case Hit::SetRepo: OpenUrl(L"https://github.com/larosa023/Hangar"); break;
         case Hit::ToastClose: g_toastAt = 0; break;
+        case Hit::SelfRestart: if (g_self.kind == SelfUpdateState::Ready) ApplySelf(g_self.staged, g_self.version, true); break;
+        case Hit::SelfCheck: CheckSelf(true); break;
+        case Hit::SelfChannel:
+            g_cfg.hangarBeta = h.arg == 1;
+            ConfigSave();
+            CheckSelf(true);
+            break;
+        case Hit::SelfAuto: g_cfg.hangarAuto = h.arg == 0; ConfigSave(); break;
+        case Hit::SelfRollback: {
+            auto prev = selfupdate::PreviousVersions();
+            if (h.arg < 0 || h.arg >= (int)prev.size()) break;
+            std::wstring msg = L"Go back to Hangar " + prev[h.arg].version + L"?\n\nHangar restarts and won't install " + HANGAR_VERSION +
+                               L" again automatically. Your apps and settings aren't touched.";
+            if (MessageBoxW(g_hwnd, msg.c_str(), L"Roll back Hangar", MB_OKCANCEL | MB_ICONQUESTION) != IDOK) break;
+            SkipVersion(HANGAR_VERSION);
+            ApplySelf(prev[h.arg].exe, prev[h.arg].version, true);
+            break;
+        }
+        case Hit::WhatsNewClose: g_whatsNew.clear(); break;
         default: break;
     }
     if (h.kind != Hit::Search && h.kind != Hit::SearchClear) g_searchFocus = false;
@@ -1323,6 +1489,11 @@ static void Scroll(float delta) {
 }
 
 static void OnKey(WPARAM vk) {
+    g_lastInput = GetTickCount();
+    if (!g_whatsNew.empty()) {
+        if (vk == VK_ESCAPE || vk == VK_RETURN || vk == VK_SPACE) { g_whatsNew.clear(); Invalidate(); }
+        return;
+    }
     bool ctrl = GetKeyState(VK_CONTROL) < 0;
     bool alt = GetKeyState(VK_MENU) < 0;
     if (ctrl && (vk == 'K' || vk == 'F')) {
@@ -1503,6 +1674,7 @@ static void OnOpDone(OpDone* d) {
         a->lastError = d->message;
         Toast(a->def.name + L": " + d->message, true);
     }
+    if (g_applyWhenIdle && jobs::ActiveOps() == 0) SetTimer(g_hwnd, TIMER_SELF, 1500, nullptr);
     // see what actually changed on disk
     jobs::Scan({a->def});
 }
@@ -1570,6 +1742,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             Invalidate();
             return 0;
         case WM_MOUSEMOVE: {
+            g_lastInput = GetTickCount();
             float x = GET_X_LPARAM(lp) / g_scale, y = GET_Y_LPARAM(lp) / g_scale;
             if (!g_tracking) {
                 TRACKMOUSEEVENT t{sizeof(t), TME_LEAVE, hwnd, 0};
@@ -1647,6 +1820,17 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     CheckReleases(false);
                     jobs::FetchManifest(g_manifestText);
                     break;
+                case TIMER_SELF:
+                    SetTimer(hwnd, TIMER_SELF, 20 * 1000, nullptr);
+                    if (GetTickCount() - g_selfCheckedTick > (DWORD)g_cfg.checkHours * 3600 * 1000 || !g_selfCheckedTick) CheckSelf(false);
+                    MaybeAutoApplySelf();
+                    break;
+                case TIMER_HEALTHY:
+                    // the window is up and drawn: tell the copy we replaced that this version works
+                    KillTimer(hwnd, TIMER_HEALTHY);
+                    selfupdate::SignalHealthy(g_after);
+                    selfupdate::FinishAfterUpdate(g_after);
+                    break;
                 case TIMER_TOAST:
                     KillTimer(hwnd, TIMER_TOAST);
                     g_toastAt = 0;
@@ -1685,6 +1869,18 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_HANGAR_PROCS: { std::unique_ptr<ProcResult> r((ProcResult*)lp); if (OnProcs(r.get())) Invalidate(); return 0; }
         case WM_HANGAR_OP_PROGRESS: { std::unique_ptr<OpProgress> r((OpProgress*)lp); OnOpProgress(r.get()); return 0; }
         case WM_HANGAR_OP_DONE: { std::unique_ptr<OpDone> r((OpDone*)lp); OnOpDone(r.get()); StartAnim(); return 0; }
+        case WM_HANGAR_SELF: {
+            std::unique_ptr<SelfUpdateState> r((SelfUpdateState*)lp);
+            bool wasReady = g_self.kind == SelfUpdateState::Ready;
+            // a failed background check doesn't hide an update that's already waiting
+            if (!(wasReady && (r->kind == SelfUpdateState::Error || r->kind == SelfUpdateState::Checking))) g_self = *r;
+            if (r->kind == SelfUpdateState::Ready && !wasReady) {
+                if (!g_cfg.hangarAuto) Toast(L"Hangar " + r->version + L" is ready. Restart Hangar to update.");
+                MaybeAutoApplySelf();
+            }
+            Invalidate();
+            return 0;
+        }
         case WM_HANGAR_ACTIVATE:
             if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
             SetForegroundWindow(hwnd);
@@ -1708,7 +1904,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-HWND UiCreate(HINSTANCE inst, int show) {
+HWND UiCreate(HINSTANCE inst, int show, const selfupdate::AfterUpdate& after) {
+    g_after = after;
     if (!gfx::Init()) return nullptr;
     WNDCLASSEXW wc{sizeof(wc)};
     wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
@@ -1745,14 +1942,45 @@ HWND UiCreate(HINSTANCE inst, int show) {
     bool navOk = g_nav == L"all" || g_nav == L"installed" || g_nav == L"updates";
     for (auto& c : g_manifest.categories) navOk |= c.id == g_nav;
     if (!navOk) g_nav = L"all";
-    ShowWindow(hwnd, g_cfg.maximized && show == SW_SHOWNORMAL ? SW_SHOWMAXIMIZED : show);
+    PruneSkippedVersions(HANGAR_VERSION);
+    if (after.active) {
+        // a Hangar update just handed over: open where the previous copy was
+        std::wstring text = selfupdate::TakeRestoreState();
+        json::Value v;
+        if (!text.empty() && json::Parser(text).Parse(v) && v.type == json::Value::Object) {
+            g_nav = v.GetStr(L"nav", g_nav);
+            g_search = v.GetStr(L"search");
+            std::wstring page = v.GetStr(L"page");
+            std::wstring detail = v.GetStr(L"detail");
+            for (size_t i = 0; i < g_apps.size(); ++i) if (g_apps[i].def.id == detail) g_detail = (int)i;
+            g_page = page == L"settings" ? Page::Settings : (page == L"details" && g_detail >= 0) ? Page::Details : Page::Library;
+            g_scroll = g_scrollTarget = (float)v.GetNum(L"scroll", 0);
+            if (v.GetBool(L"minimized", false)) show = SW_SHOWMINNOACTIVE;
+            else if (v.GetBool(L"background", false)) show = SW_SHOWNOACTIVATE;
+        }
+        if (CompareVersions(after.fromVersion, HANGAR_VERSION) < 0) {
+            std::wstring notes;
+            LoadResourceText(101, notes);
+            g_whatsNew = CleanNotes(notes);
+            if (g_whatsNew.empty()) g_whatsNew = L"See the release notes on GitHub.";
+            g_whatsNewVersion = HANGAR_VERSION;
+        } else {
+            Toast(std::wstring(L"Rolled back to Hangar ") + HANGAR_VERSION + L".");
+        }
+        Log(L"started after an update from %ls", after.fromVersion.c_str());
+    }
+    // (a maximized window can't be shown without activating it; that only happens when you're away)
+    bool maximize = g_cfg.maximized && (show == SW_SHOWNORMAL || show == SW_SHOWNOACTIVATE);
+    ShowWindow(hwnd, maximize ? SW_SHOWMAXIMIZED : show);
     UpdateWindow(hwnd);
+    if (after.active) SetTimer(hwnd, TIMER_HEALTHY, 400, nullptr);
 
     // then refresh in the background
     jobs::FetchManifest(g_manifestText);
     CheckReleases(false);
     SetTimer(hwnd, TIMER_PROCS, 2500, nullptr);
     SetTimer(hwnd, TIMER_CHECK, 15 * 60 * 1000, nullptr);
+    SetTimer(hwnd, TIMER_SELF, 20 * 1000, nullptr);   // first check about 20 s after startup, then every check interval
     return hwnd;
 }
 

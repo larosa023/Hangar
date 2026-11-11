@@ -295,7 +295,7 @@ struct OpContext {
     }
 };
 
-static std::wstring ExpectedHashFromSums(const std::string& sums, const std::wstring& assetName) {
+std::wstring ExpectedHashFromSums(const std::string& sums, const std::wstring& assetName) {
     std::wstring text = Utf8ToWide(sums);
     size_t i = 0;
     std::wstring single;
