@@ -71,6 +71,8 @@ Installed DetectInstalled(const AppDef& def);
 // Stored in DataDir()\locations.json; thread-safe.
 void RememberLocation(const std::wstring& id, const std::wstring& exe);
 void ForgetLocation(const std::wstring& id);
+// Remembers which release Hangar just installed at `exe` (see "installed-version stamps").
+void RecordInstalledVersion(const std::wstring& id, const std::wstring& exe, const std::wstring& version);
 std::wstring RememberedLocation(const std::wstring& id);
 void InvalidateDiscoveryCache();   // the next scan looks at shortcuts, startup entries and processes again
 std::wstring PortableDir(const AppDef& def);

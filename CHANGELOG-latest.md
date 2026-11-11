@@ -1,12 +1,8 @@
-## Hangar 0.1.2
+## Hangar 0.1.3
 
-**Hangar now updates itself.**
-- It checks GitHub for new versions of Hangar in the background: about 20 seconds after it opens, then on the same interval as app checks (every 3 hours by default).
-- New versions download and are SHA-256 verified quietly. When one is ready, the sidebar shows **Restart to update**.
-- Restarting takes about a second, and you land on the same page with the same search and scroll position. A short "What's new" note appears afterwards.
-- **Automatic installs** wait until Hangar is minimized or you've been away from the PC for 2 minutes. Hangar never updates itself while it's installing apps.
-- **Safe:** if a new version doesn't start, Hangar puts the old one back by itself and skips that version.
-- **Roll back** to either of the last 2 versions from Settings → Hangar updates.
-- **Stable or Beta** channel for Hangar itself, and auto-install can be turned off.
+### Fixed
+- **An app could keep showing "Update available" right after updating.** If an app's exe still carried an old version number in its file properties, Hangar believed the old number. Hangar now remembers exactly which release it installed and trusts that as long as the file hasn't changed. (Foyer 0.2.0 was the first app to hit this.)
+- **Apps you downloaded but never "installed" now show as installed.** Hangar now also looks in your Downloads folder and on your Desktop, including renamed copies like `Breaker (1).exe`. It only accepts an exe whose file properties name the app or larosa023, so an unrelated file with a similar name is never picked up.
 
-You need to download this version by hand once. From here on, Hangar keeps itself up to date.
+### Also
+- Hangar's own version number is now stamped into Hangar.exe automatically on every build.

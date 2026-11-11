@@ -2,6 +2,7 @@
 # Cross-compile Hangar.exe from Linux/macOS with Zig (pip install ziglang, or a zig binary on PATH).
 set -euo pipefail
 cd "$(dirname "$0")"
+./sync-version.sh
 if [[ -z "${ZIG:-}" ]]; then
   if command -v zig >/dev/null 2>&1; then ZIG=zig; else ZIG="python3 -m ziglang"; fi
 fi

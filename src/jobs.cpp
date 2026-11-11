@@ -505,6 +505,7 @@ static bool InstallPortable(OpContext& ctx, const std::wstring& file, bool wasRu
         return false;
     }
     RegisterPortable(def, target, ctx.req.release.version);
+    RecordInstalledVersion(def.id, target, ctx.req.release.version);
     if (wasRunning) {
         ctx.Progress(-1, L"Starting " + def.name + L"…");
         if (!StartsHealthy(target)) {

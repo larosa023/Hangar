@@ -246,6 +246,8 @@ std::wstring PortableDir(const AppDef& def) { return ExpandEnv(def.dir); }
 static std::wstring CommandExe(const std::wstring& cmd0);
 static std::vector<std::wstring> ExeNames(const AppDef& def);
 
+static std::wstring StampedVersion(const std::wstring& id, const std::wstring& exe, const std::wstring& exeVersion);
+
 static Installed DetectRegistered(const AppDef& def) {
     Installed in;
     if (def.type == InstallType::Portable) {
@@ -255,7 +257,7 @@ static Installed DetectRegistered(const AppDef& def) {
             in.installed = true;
             in.exe = exe;
             in.dir = dir;
-            in.version = ExeVersion(exe);
+            in.version = StampedVersion(def.id, exe, ExeVersion(exe));
         }
         // the app may have registered itself in Apps & features
         auto entries = FindUninstallEntries(def.name);
@@ -266,7 +268,7 @@ static Installed DetectRegistered(const AppDef& def) {
                 in.installed = true;
                 in.exe = ex;
                 in.dir = PathParent(ex);
-                in.version = ExeVersion(ex);
+                in.version = StampedVersion(def.id, ex, ExeVersion(ex));
             }
             if (in.installed && IEquals(PathParent(ex), in.dir)) {
                 if (in.version.empty()) in.version = NormalizeVersion(e.version);
@@ -362,6 +364,66 @@ std::wstring RememberedLocation(const std::wstring& id) {
     LoadLocationsLocked();
     auto it = s_loc.find(id);
     return it == s_loc.end() ? L"" : it->second;
+}
+
+
+// ---------------------------------------------------------------- installed-version stamps
+// When Hangar installs a portable exe it records the release version together with the
+// file's size and timestamp. If the exe's own version info disagrees (an app that forgot
+// to bump its version resource), the stamp wins as long as the file is unchanged, so
+// Hangar never offers the same update over and over.
+static std::mutex s_stampLock;
+static json::Value s_stamps;
+static bool s_stampsLoaded = false;
+
+static std::wstring StampPath() { return DataDir() + L"\\installed.json"; }
+
+static bool FileFingerprint(const std::wstring& exe, unsigned long long& size, unsigned long long& mtime) {
+    WIN32_FILE_ATTRIBUTE_DATA fad{};
+    if (!GetFileAttributesExW(exe.c_str(), GetFileExInfoStandard, &fad)) return false;
+    size = ((unsigned long long)fad.nFileSizeHigh << 32) | fad.nFileSizeLow;
+    mtime = ((unsigned long long)fad.ftLastWriteTime.dwHighDateTime << 32) | fad.ftLastWriteTime.dwLowDateTime;
+    return true;
+}
+
+static void LoadStampsLocked() {
+    if (s_stampsLoaded) return;
+    s_stampsLoaded = true;
+    std::wstring text;
+    if (!ReadTextFile(StampPath(), text) || !json::Parser(text).Parse(s_stamps) || s_stamps.type != json::Value::Object)
+        s_stamps = json::Value::MakeObject();
+}
+
+void RecordInstalledVersion(const std::wstring& id, const std::wstring& exe, const std::wstring& version) {
+    unsigned long long size = 0, mtime = 0;
+    if (version.empty() || !FileFingerprint(exe, size, mtime)) return;
+    std::lock_guard<std::mutex> g(s_stampLock);
+    LoadStampsLocked();
+    json::Value o = json::Value::MakeObject();
+    o.Set(L"exe", json::Value::Str(exe));
+    o.Set(L"version", json::Value::Str(version));
+    o.Set(L"size", json::Value::Str(std::to_wstring(size)));
+    o.Set(L"mtime", json::Value::Str(std::to_wstring(mtime)));
+    s_stamps.Set(id, o);
+    std::wstring out;
+    json::Write(s_stamps, out);
+    WriteTextFileAtomic(StampPath(), out);
+}
+
+// The version to show for `exe`: the stamp's when it matches the file, else the exe's own.
+static std::wstring StampedVersion(const std::wstring& id, const std::wstring& exe, const std::wstring& exeVersion) {
+    unsigned long long size = 0, mtime = 0;
+    if (!FileFingerprint(exe, size, mtime)) return exeVersion;
+    std::lock_guard<std::mutex> g(s_stampLock);
+    LoadStampsLocked();
+    const json::Value* st = s_stamps.Get(id);
+    if (!st || !IEquals(st->GetStr(L"exe"), exe)) return exeVersion;
+    if (st->GetStr(L"size") != std::to_wstring(size) || st->GetStr(L"mtime") != std::to_wstring(mtime)) return exeVersion;
+    std::wstring v = st->GetStr(L"version");
+    if (v.empty()) return exeVersion;
+    if (!exeVersion.empty() && CompareVersions(exeVersion, v) != 0)
+        Log(L"%ls: exe reports %ls but Hangar installed %ls; using %ls", id.c_str(), exeVersion.c_str(), v.c_str(), v.c_str());
+    return v;
 }
 
 // ---------------------------------------------------------------- discovery
@@ -493,6 +555,43 @@ static std::vector<std::wstring> ExeNames(const AppDef& def) {
     return names;
 }
 
+
+// Downloaded apps often sit in Downloads or on the Desktop, sometimes renamed by the
+// browser ("Breaker (1).exe"). Only exes whose version info names the app or larosa023
+// count here, so an unrelated file with a similar name is never picked up.
+static std::wstring FindLooseCopy(const AppDef& def) {
+    std::wstring stem = def.exe;
+    if (stem.size() > 4 && IEquals(stem.substr(stem.size() - 4), L".exe")) stem.resize(stem.size() - 4);
+    std::wstring best, bestVer;
+    unsigned long long bestTime = 0;
+    for (const GUID* folder : {&FOLDERID_Downloads, &FOLDERID_Desktop}) {
+        std::wstring dir = KnownFolder(*folder);
+        if (dir.empty()) continue;
+        WIN32_FIND_DATAW fd;
+        HANDLE f = FindFirstFileW((dir + L"\\" + stem + L"*.exe").c_str(), &fd);
+        if (f == INVALID_HANDLE_VALUE) continue;
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            std::wstring name = fd.cFileName;
+            // "Breaker.exe", "Breaker (1).exe", "Breaker-1.0.0.exe" - but not "BreakerHelper.exe"
+            wchar_t next = name.size() > stem.size() ? name[stem.size()] : L'.';
+            if (next != L'.' && next != L' ' && next != L'-' && next != L'_' && next != L'(') continue;
+            std::wstring path = dir + L"\\" + name;
+            std::wstring company, product, desc;
+            ExeStrings(path, company, product, desc);
+            bool ours = IContains(company, L"larosa") || (!def.owner.empty() && IContains(company, def.owner)) ||
+                        IContains(product, def.name) || IContains(desc, def.name);
+            if (!ours) continue;
+            std::wstring ver = ExeVersion(path);
+            unsigned long long t = ((unsigned long long)fd.ftLastWriteTime.dwHighDateTime << 32) | fd.ftLastWriteTime.dwLowDateTime;
+            int cmp = best.empty() ? 1 : CompareVersions(ver, bestVer);
+            if (cmp > 0 || (cmp == 0 && t > bestTime)) { best = path; bestVer = ver; bestTime = t; }
+        } while (FindNextFileW(f, &fd));
+        FindClose(f);
+    }
+    return best;
+}
+
 static std::wstring Discover(const AppDef& def) {
     // 1. folders apps commonly live in
     std::vector<std::wstring> dirs = {
@@ -523,7 +622,8 @@ static std::wstring Discover(const AppDef& def) {
     auto range = s_disc.equal_range(Lower(def.exe));
     for (auto it = range.first; it != range.second; ++it)
         if (!IContains(it->second, L"\\Temp\\") && LooksLikeApp(def, it->second)) return it->second;
-    return L"";
+    // 4. a downloaded copy in Downloads or on the Desktop
+    return FindLooseCopy(def);
 }
 
 static Installed FromExe(const AppDef& def, const std::wstring& exe) {
@@ -532,7 +632,7 @@ static Installed FromExe(const AppDef& def, const std::wstring& exe) {
     in.exe = exe;
     in.dir = PathParent(exe);
     if (def.type == InstallType::Velopack && IEquals(PathName(in.dir), L"current")) in.dir = PathParent(in.dir);
-    in.version = ExeVersion(exe);
+    in.version = StampedVersion(def.id, exe, ExeVersion(exe));
     return in;
 }
 
