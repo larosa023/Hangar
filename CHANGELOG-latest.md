@@ -1,8 +1,12 @@
-## Hangar 0.1.3
+## Hangar 0.1.4
 
-### Fixed
-- **An app could keep showing "Update available" right after updating.** If an app's exe still carried an old version number in its file properties, Hangar believed the old number. Hangar now remembers exactly which release it installed and trusts that as long as the file hasn't changed. (Foyer 0.2.0 was the first app to hit this.)
-- **Apps you downloaded but never "installed" now show as installed.** Hangar now also looks in your Downloads folder and on your Desktop, including renamed copies like `Breaker (1).exe`. It only accepts an exe whose file properties name the app or larosa023, so an unrelated file with a similar name is never picked up.
+**Themes.** A new **Themes** page in the sidebar has 14 themes with live previews. Click one and it changes right away.
+- **Dark, Light,** and **Windows** (follows Windows light/dark mode)
+- **Midnight:** pure black for OLED screens
+- **Glass:** see-through over your wallpaper (Windows 11)
+- **Frost, Twilight, Forest, Sunset, Ocean, Rose, Graphite**
+- **Paper** and **Mist:** two softer light themes
 
-### Also
-- Hangar's own version number is now stamped into Hangar.exe automatically on every build.
+**Accent color:** the theme's own, your Windows accent, 9 swatches, or any custom color.
+
+**Theme files:** save the current look as a `.json` file to tweak or share it. Any theme files you drop in the themes folder show up in the gallery. See docs/THEMES.md for the format.

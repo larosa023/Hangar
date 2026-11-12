@@ -18,7 +18,7 @@
 #include <cstdint>
 
 #ifndef HANGAR_VERSION
-#define HANGAR_VERSION L"0.1.3"
+#define HANGAR_VERSION L"0.1.4"
 #endif
 #define HANGAR_REPO_OWNER L"larosa023"
 #define HANGAR_REPO_NAME L"Hangar"

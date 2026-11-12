@@ -4,7 +4,8 @@
 #include <map>
 
 struct Config {
-    std::wstring theme = L"dark";       // dark | light | system
+    std::wstring theme = L"dark";       // a built-in theme id (dark, light, system, midnight…) or custom:<id>
+    std::wstring accent = L"theme";     // theme | windows | #RRGGBB
     bool listView = false;
     bool beta = false;                  // default channel for every app
     std::map<std::wstring, std::wstring> channel;   // per-app override: id -> "stable" | "beta"

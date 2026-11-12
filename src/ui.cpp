@@ -9,6 +9,7 @@
 #include "net.h"
 #include "selfupdate.h"
 #include "json.h"
+#include "themes.h"
 #include <windowsx.h>
 #include <shellapi.h>
 #include <commdlg.h>
@@ -44,12 +45,13 @@ struct AppState {
     float hover = 0;
 };
 
-enum class Page { Library, Details, Settings };
+enum class Page { Library, Details, Settings, Themes };
 
 enum class Hit {
     None, Nav, Search, SearchClear, ViewGrid, ViewList, Refresh, UpdateAll, Card, CardAction, Back,
     DAction, DCancel, DOpenFolder, DRepair, DUninstall, DLocate, DChannel, DReleasePage, DRepo,
     SetTheme, SetChannel, SetHours, SetCheckNow, SetOpenData, SetOpenLog, SetLocalManifest, SetRepo, ToastClose,
+    ThemePick, AccentPick, ThemeExport, ThemeFolder, ThemeReload, ThemeBrowse,
     SelfRestart, SelfCheck, SelfChannel, SelfAuto, SelfRollback, WhatsNewClose,
 };
 
@@ -65,6 +67,12 @@ static HWND g_hwnd;
 static ID2D1HwndRenderTarget* g_rt;
 static ID2D1SolidColorBrush* g_br;
 static Theme g_t;
+static std::vector<ThemeDef> g_customThemes;
+
+static void ApplyTheme() {
+    g_t = MakeTheme(FindTheme(g_cfg.theme, g_customThemes), g_cfg.accent);
+    if (g_hwnd) { ApplyWindowTheme(g_hwnd, g_t); InvalidateRect(g_hwnd, nullptr, FALSE); }
+}
 static float g_scale = 1.0f;
 static float g_W = 0, g_H = 0;
 
@@ -598,7 +606,8 @@ static bool MatchesNav(const AppState& a, const std::wstring& nav) {
 
 static void NavItem(float y, const std::wstring& id, const std::wstring& label, wchar_t glyph, int count, bool badge, int arg) {
     D2D1_RECT_F r = D2D1::RectF(10, y, kSidebar - 10, y + 36);
-    bool sel = (g_page == Page::Library && g_nav == id) || (id == L"settings" && g_page == Page::Settings);
+    bool sel = (g_page == Page::Library && g_nav == id) || (id == L"settings" && g_page == Page::Settings) ||
+               (id == L"themes" && g_page == Page::Themes);
     bool hot = IsHover(Hit::Nav, -1, arg);
     if (sel) g_c.FillRound(r, 6, g_t.dark ? Rgb(0xFFFFFF, 0.08f) : Rgb(0x000000, 0.06f));
     else if (hot) g_c.FillRound(r, 6, g_t.dark ? Rgb(0xFFFFFF, 0.04f) : Rgb(0x000000, 0.035f));
@@ -606,7 +615,7 @@ static void NavItem(float y, const std::wstring& id, const std::wstring& label, 
     g_c.Glyph(glyph, Format(15, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER, false, true), D2D1::RectF(r.left + 10, y, r.left + 34, y + 36),
               sel ? g_t.accent : g_t.subtext);
     g_c.Text(label, Format(13.5f, sel ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL), D2D1::RectF(r.left + 42, y, r.right - 40, y + 36), g_t.text);
-    if (count > 0 || (count == 0 && !badge && id != L"settings")) {
+    if (count > 0 || (count == 0 && !badge && id != L"settings" && id != L"themes")) {
         std::wstring n = std::to_wstring(count);
         if (badge && count > 0) {
             auto* f = Format(11.5f, DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -696,13 +705,20 @@ static void DrawSidebar() {
     }
     // bottom
     float by = g_H - 82;
-    if (g_self.kind == SelfUpdateState::Ready && y + 100 < by) {
+    float ty = by - 38;   // Themes sits above Settings
+    if (g_self.kind == SelfUpdateState::Ready && y + 140 < ty) {
+        by = ty;
         D2D1_RECT_F b = D2D1::RectF(12, by - 92, kSidebar - 12, by - 8);
         g_c.FillRound(b, 8, Alpha(g_t.accent, 0.14f));
         g_c.StrokeRound(b, 8, Alpha(g_t.accent, 0.35f));
         g_c.Text(L"Hangar " + g_self.version + L" is ready", Format(12.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(b.left + 12, b.top + 8, b.right - 8, b.top + 28), g_t.text);
         g_c.Text(jobs::ActiveOps() ? L"Installs after the current updates" : L"Takes a second · you stay where you are", Format(11.5f), D2D1::RectF(b.left + 12, b.top + 27, b.right - 8, b.top + 44), g_t.subtext);
         Button(D2D1::RectF(b.left + 10, b.bottom - 34, b.right - 10, b.bottom - 8), L"Restart to update", icon::Update, Btn::Primary, Hit::SelfRestart);
+    }
+    by = g_H - 82;
+    if (y + 48 < ty) {
+        g_navIds.push_back(L"themes");
+        NavItem(ty, L"themes", L"Themes", icon::Color, -1, false, (int)g_navIds.size() - 1);
     }
     if (y + 10 < by) {
         g_navIds.push_back(L"settings");
@@ -1067,6 +1083,201 @@ static void DrawDetails(float x0) {
     g_rt->PopAxisAlignedClip();
 }
 
+// ---------------------------------------------------------------- themes
+static std::vector<ThemeDef> AllThemes() {
+    std::vector<ThemeDef> all = BuiltinThemes();
+    all.insert(all.end(), g_customThemes.begin(), g_customThemes.end());
+    return all;
+}
+
+static std::wstring HexColor(uint32_t c) {
+    wchar_t b[16];
+    swprintf(b, 16, L"#%06X", c & 0xFFFFFF);
+    return b;
+}
+
+static bool PickCustomAccent() {
+    static COLORREF custom[16] = {};
+    uint32_t cur = ResolveAccent(FindTheme(g_cfg.theme, g_customThemes), g_cfg.accent);
+    CHOOSECOLORW cc{sizeof(cc)};
+    cc.hwndOwner = g_hwnd;
+    cc.rgbResult = RGB((cur >> 16) & 0xFF, (cur >> 8) & 0xFF, cur & 0xFF);
+    cc.lpCustColors = custom;
+    cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+    if (!ChooseColorW(&cc)) return false;
+    g_cfg.accent = HexColor((GetRValue(cc.rgbResult) << 16) | (GetGValue(cc.rgbResult) << 8) | GetBValue(cc.rgbResult));
+    return true;
+}
+
+static void ExportTheme() {
+    ThemeDef cur = FindTheme(g_cfg.theme, g_customThemes);
+    if (cur.followWindows) cur = BuiltinThemes()[SystemUsesLightTheme() ? 1 : 0];
+    std::wstring base = cur.custom ? cur.name : cur.name + L" (copy)";
+    for (auto& ch : base) if (wcschr(L"\\/:*?\"<>|", ch)) ch = L'-';
+    EnsureDir(ThemesDir());
+    std::wstring path = ThemesDir() + L"\\" + base + L".json";
+    for (int n = 2; FileExists(path) && !cur.custom; ++n) path = ThemesDir() + L"\\" + base + L" " + std::to_wstring(n) + L".json";
+    if (!WriteTextFileAtomic(path, ThemeToJson(cur, g_cfg.accent))) { Toast(L"Couldn't save the theme file.", true); return; }
+    g_customThemes = LoadCustomThemes();
+    Toast(L"Saved " + PathName(path) + L". Edit it, then press Reload.");
+    ShellExecuteW(g_hwnd, L"open", L"explorer.exe", (L"/select,\"" + path + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
+}
+
+// A miniature Hangar window drawn in the theme's colors
+static void DrawThemePreview(const ThemeDef& def0, const D2D1_RECT_F& r, int index, bool selected) {
+    ThemeDef def = def0;
+    if (def.followWindows) def = BuiltinThemes()[SystemUsesLightTheme() ? 1 : 0];
+    std::wstring accentSetting = selected ? g_cfg.accent : L"theme";
+    Theme pt = MakeTheme(def, accentSetting);
+    bool hot = IsHover(Hit::ThemePick, -1, index);
+    D2D1_RECT_F card = r;
+    g_c.FillRound(card, 10, hot ? g_t.surfaceHover : g_t.surface);
+    D2D1_RECT_F pv = D2D1::RectF(r.left + 10, r.top + 10, r.right - 10, r.bottom - 50);
+    ID2D1RoundedRectangleGeometry* clip = nullptr;
+    d2d->CreateRoundedRectangleGeometry(D2D1::RoundedRect(pv, 7, 7), &clip);
+    ID2D1Layer* layer = nullptr;
+    g_rt->CreateLayer(&layer);
+    if (clip && layer) g_rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), clip), layer);
+    if (def.backdrop == L"acrylic" || def.surfaceOpacity < 1.0f) {
+        // glass themes: show them over a "wallpaper"
+        ID2D1GradientStopCollection* stops = nullptr;
+        D2D1_GRADIENT_STOP gs[3] = {{0, Rgb(0x3A5BD9)}, {0.55f, Rgb(0x8E4FD6)}, {1, Rgb(0xE0679A)}};
+        g_rt->CreateGradientStopCollection(gs, 3, &stops);
+        ID2D1LinearGradientBrush* lg = nullptr;
+        if (stops) g_rt->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(D2D1::Point2F(pv.left, pv.top), D2D1::Point2F(pv.right, pv.bottom)), stops, &lg);
+        if (lg) { g_rt->FillRectangle(pv, lg); lg->Release(); }
+        if (stops) stops->Release();
+        g_c.Fill(pv, Rgb(def.bg, 1.0f - def.transparency));
+    } else {
+        g_c.Fill(pv, Rgb(def.bg));
+    }
+    float w = pv.right - pv.left, h = pv.bottom - pv.top;
+    D2D1_RECT_F sb = D2D1::RectF(pv.left, pv.top, pv.left + w * 0.27f, pv.bottom);
+    g_c.Fill(sb, def.backdrop == L"acrylic" ? Rgb(def.sidebar, 0.35f) : Rgb(def.sidebar));
+    // sidebar: logo + nav lines, one selected
+    g_c.FillRound(D2D1::RectF(sb.left + 6, pv.top + 7, sb.left + 14, pv.top + 15), 2, pt.accent);
+    for (int k = 0; k < 4; ++k) {
+        float ly = pv.top + 24 + k * 11;
+        if (k == 0) g_c.FillRound(D2D1::RectF(sb.left + 4, ly - 3, sb.right - 4, ly + 6), 2, Alpha(pt.text, 0.10f));
+        g_c.FillRound(D2D1::RectF(sb.left + 8, ly, sb.left + 8 + (sb.right - sb.left - 18) * (k == 0 ? 0.8f : 0.55f + 0.1f * (k % 2)), ly + 3), 1.5f, k == 0 ? pt.text : pt.subtext);
+    }
+    // content: title + two cards
+    float cx = sb.right + 8;
+    g_c.FillRound(D2D1::RectF(cx, pv.top + 8, cx + w * 0.22f, pv.top + 12), 2, pt.text);
+    float cw = (pv.right - cx - 8 - 6) / 2, ch = h - 34;
+    for (int k = 0; k < 2; ++k) {
+        D2D1_RECT_F c = D2D1::RectF(cx + k * (cw + 6), pv.top + 20, cx + k * (cw + 6) + cw, pv.top + 20 + ch);
+        g_c.FillRound(c, 4, def.surfaceOpacity < 1.0f ? Rgb(def.surface, def.surfaceOpacity * 1.8f) : pt.surface);
+        g_c.FillRound(D2D1::RectF(c.left + 5, c.top + 5, c.left + 14, c.top + 14), 2.5f, Alpha(pt.accent, k ? 0.5f : 0.9f));
+        g_c.FillRound(D2D1::RectF(c.left + 18, c.top + 6, c.left + 18 + cw * 0.40f, c.top + 9), 1.5f, pt.text);
+        g_c.FillRound(D2D1::RectF(c.left + 18, c.top + 11, c.left + 18 + cw * 0.25f, c.top + 13.5f), 1.2f, pt.subtext);
+        g_c.FillRound(D2D1::RectF(c.left + 5, c.top + 20, c.right - 8, c.top + 22.5f), 1.2f, Alpha(pt.subtext, 0.7f));
+        g_c.FillRound(D2D1::RectF(c.left + 5, c.top + 26, c.right - 18, c.top + 28.5f), 1.2f, Alpha(pt.subtext, 0.7f));
+        D2D1_RECT_F btn = D2D1::RectF(c.right - 26, c.bottom - 13, c.right - 5, c.bottom - 5);
+        if (k == 0) g_c.FillRound(btn, 2.5f, pt.accent);
+        else g_c.FillRound(btn, 2.5f, pt.surfaceStrong);
+    }
+    if (layer) { g_rt->PopLayer(); layer->Release(); }
+    if (clip) clip->Release();
+    g_c.StrokeRound(pv, 7, Alpha(g_t.text, 0.10f));
+    // name
+    g_c.Text(def0.name, Format(13.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(r.left + 14, r.bottom - 44, r.right - 40, r.bottom - 24), g_t.text);
+    g_c.Text(def0.description, Format(11.5f), D2D1::RectF(r.left + 14, r.bottom - 25, r.right - 12, r.bottom - 8), g_t.subtext);
+    if (def0.custom) Pill(r.right - 12, r.bottom - 43, L"Custom", g_t.info, true);
+    if (selected) {
+        g_c.StrokeRound(card, 10, g_t.accent, 2);
+        g_c.Circle(r.right - 22, r.top + 22, 10, g_t.accent);
+        g_c.Glyph(icon::Check, Format(10, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER, false, true),
+                  D2D1::RectF(r.right - 32, r.top + 12, r.right - 12, r.top + 32), g_t.onAccent);
+    } else if (hot) {
+        g_c.StrokeRound(card, 10, Alpha(g_t.accent, 0.5f));
+    }
+    AddHot(card, Hit::ThemePick, -1, index);
+}
+
+static void DrawThemes(float x0) {
+    float pad = 32;
+    float left = x0 + pad, right = std::min(g_W - pad, x0 + pad + 1100);
+    g_viewH = g_H;
+    g_rt->PushAxisAlignedClip(D2D1::RectF(x0, 0, g_W, g_H), D2D1_ANTIALIAS_MODE_ALIASED);
+    float y = 22 - g_scroll;
+    g_c.Text(L"Themes", Format(22, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(left, y, right, y + 32), g_t.text);
+    g_c.Text(L"Click a theme to try it. It changes right away.", Format(12.5f), D2D1::RectF(left, y + 30, right, y + 48), g_t.subtext);
+    y += 66;
+
+    // gallery
+    auto all = AllThemes();
+    float gap = 14, minW = 200, avail = right - left;
+    int cols = std::max(1, (int)((avail + gap) / (minW + gap)));
+    float cw = (avail - gap * (cols - 1)) / cols, ch = std::min(190.0f, cw * 0.62f + 50);
+    for (size_t k = 0; k < all.size(); ++k) {
+        int c = (int)(k % cols), row = (int)(k / cols);
+        D2D1_RECT_F r = D2D1::RectF(left + c * (cw + gap), y + row * (ch + gap), left + c * (cw + gap) + cw, y + row * (ch + gap) + ch);
+        if (r.bottom > 0 && r.top < g_H) DrawThemePreview(all[k], r, (int)k, all[k].id == g_cfg.theme);
+    }
+    y += ((int)all.size() + cols - 1) / cols * (ch + gap) + 18;
+
+    // accent
+    g_c.Text(L"ACCENT COLOR", Format(12, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(left, y, right, y + 20), g_t.subtext);
+    y += 28;
+    D2D1_RECT_F box = D2D1::RectF(left, y, right, y + 64);
+    g_c.FillRound(box, 10, g_t.surface);
+    float ax = left + 16, ay = y + 16;
+    ThemeDef cur = FindTheme(g_cfg.theme, g_customThemes);
+    auto chip = [&](const std::wstring& label, uint32_t color, int arg, bool sel) {
+        auto* f = Format(12.5f, sel ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL);
+        float w = MeasureWidth(label, f) + 42;
+        D2D1_RECT_F r = D2D1::RectF(ax, ay, ax + w, ay + 32);
+        g_c.FillRound(r, 16, sel ? Alpha(g_t.accent, 0.18f) : (IsHover(Hit::AccentPick, -1, arg) ? g_t.surfaceHover : Mix(g_t.surface, g_t.surfaceStrong, 0.4f)));
+        if (sel) g_c.StrokeRound(r, 16, g_t.accent, 1.5f);
+        g_c.Circle(r.left + 16, ay + 16, 7, Rgb(color));
+        g_c.Text(label, f, D2D1::RectF(r.left + 29, ay, r.right - 8, ay + 32), g_t.text);
+        AddHot(r, Hit::AccentPick, -1, arg);
+        ax += w + 8;
+    };
+    chip(L"Theme's own", ResolveAccent(cur, L"theme"), 0, g_cfg.accent == L"theme");
+    chip(L"Windows", SystemAccent(), 1, g_cfg.accent == L"windows");
+    ax += 6;
+    bool customSel = g_cfg.accent.size() == 7 && g_cfg.accent[0] == L'#';
+    for (int k = 0; k < kAccentSwatchCount; ++k) {
+        bool sel = IEquals(g_cfg.accent, HexColor(kAccentSwatches[k]));
+        if (sel) customSel = false;
+        float cxx = ax + 16;
+        if (cxx + 16 > right - 110) break;
+        if (sel) g_c.Circle(cxx, ay + 16, 15, g_t.text);
+        else if (IsHover(Hit::AccentPick, -1, 2 + k)) g_c.Circle(cxx, ay + 16, 15, Alpha(g_t.text, 0.3f));
+        g_c.Circle(cxx, ay + 16, sel ? 12.5f : 13, Rgb(kAccentSwatches[k]));
+        AddHot(D2D1::RectF(ax, ay, ax + 32, ay + 32), Hit::AccentPick, -1, 2 + k);
+        ax += 38;
+    }
+    ax += 4;
+    chip(customSel ? g_cfg.accent : L"Custom…", customSel ? ResolveAccent(cur, g_cfg.accent) : 0x888888, 100, customSel);
+    y += 64 + 26;
+
+    // custom themes
+    g_c.Text(L"YOUR THEMES", Format(12, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(left, y, right, y + 20), g_t.subtext);
+    y += 28;
+    D2D1_RECT_F b2 = D2D1::RectF(left, y, right, y + 64);
+    g_c.FillRound(b2, 10, g_t.surface);
+    g_c.Text(L"Theme files", Format(14), D2D1::RectF(left + 18, y + 12, right - 420, y + 32), g_t.text);
+    g_c.Text(L"Save the current look as a .json file to tweak or share. Files in the themes folder appear above.",
+             Format(12), D2D1::RectF(left + 18, y + 32, right - 420, y + 50), g_t.subtext);
+    float bx = right - 18;
+    auto btn = [&](const std::wstring& l, wchar_t g, Hit kind) {
+        float w = ButtonWidth(l, g);
+        Button(D2D1::RectF(bx - w, y + 16, bx, y + 48), l, g, Btn::Secondary, kind);
+        bx -= w + 8;
+    };
+    btn(L"Reload", icon::Refresh, Hit::ThemeReload);
+    btn(L"Open folder", icon::Folder, Hit::ThemeFolder);
+    btn(L"Save as file", icon::Download, Hit::ThemeExport);
+    y += 64 + 20;
+    g_c.Text(L"Coming with the Hangar SDK: apply one theme to every app in the suite at once.", Format(12), D2D1::RectF(left, y, right, y + 20), g_t.faint);
+    y += 30;
+    g_contentH = y + g_scroll;
+    g_rt->PopAxisAlignedClip();
+}
+
 // ---------------------------------------------------------------- settings
 static void Segmented(float x, float y, const std::vector<std::wstring>& opts, int sel, Hit kind) {
     auto* f = Format(13, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -1106,9 +1317,11 @@ static void DrawSettings(float x0) {
     };
 
     D2D1_RECT_F s1 = section(L"APPEARANCE", 64);
-    rowLabel(s1.top + 4, L"Theme", L"More themes and suite-wide theming arrive in Phase 4");
-    int th = g_cfg.theme == L"light" ? 1 : g_cfg.theme == L"system" ? 2 : 0;
-    Segmented(right - 280, s1.top + 16, {L"Dark", L"Light", L"Windows"}, th, Hit::SetTheme);
+    {
+        ThemeDef cur = FindTheme(g_cfg.theme, g_customThemes);
+        rowLabel(s1.top + 4, L"Theme", cur.name + L" · " + cur.description);
+        Button(D2D1::RectF(right - 170, s1.top + 16, right - 18, s1.top + 48), L"Browse themes", icon::Color, Btn::Secondary, Hit::ThemeBrowse);
+    }
     y = s1.bottom + 26;
 
     D2D1_RECT_F s2 = section(L"UPDATES", 64 * 3);
@@ -1257,9 +1470,10 @@ static void Paint() {
     if (slide > 0.05f) g_rt->SetTransform(D2D1::Matrix3x2F::Translation(0, slide));
     if (g_page == Page::Library) DrawLibrary(x0);
     else if (g_page == Page::Details) DrawDetails(x0);
+    else if (g_page == Page::Themes) DrawThemes(x0);
     else DrawSettings(x0);
     g_rt->SetTransform(D2D1::Matrix3x2F::Identity());
-    if (g_pageAnim < 0.999f) g_c.Fill(D2D1::RectF(x0, 0, g_W, g_H), Alpha(Rgb(g_t.dark ? 0x16161A : 0xF5F5F7), (1.0f - g_pageAnim) * 0.85f));
+    if (g_pageAnim < 0.999f) { D2D1_COLOR_F o = g_t.bg; o.a = (1.0f - g_pageAnim) * 0.85f; g_c.Fill(D2D1::RectF(x0, 0, g_W, g_H), o); }
     DrawScrollbar(x0);
     DrawSidebar();
     DrawToast();
@@ -1308,6 +1522,7 @@ static void Navigate(Page p, int detail = -1) {
 
 static void ShowNav(const std::wstring& id) {
     if (id == L"settings") { Navigate(Page::Settings); return; }
+    if (id == L"themes") { Navigate(Page::Themes); return; }
     if (g_page == Page::Library && g_nav == id) return;
     g_nav = id;
     g_cfg.page = id;
@@ -1344,7 +1559,7 @@ static void SaveWindowPlacement();
 
 static std::wstring RestoreJson() {
     json::Value v = json::Value::MakeObject();
-    v.Set(L"page", json::Value::Str(g_page == Page::Details ? L"details" : g_page == Page::Settings ? L"settings" : L"library"));
+    v.Set(L"page", json::Value::Str(g_page == Page::Details ? L"details" : g_page == Page::Settings ? L"settings" : g_page == Page::Themes ? L"themes" : L"library"));
     v.Set(L"nav", json::Value::Str(g_nav));
     v.Set(L"detail", json::Value::Str(g_detail >= 0 && g_detail < (int)g_apps.size() ? g_apps[g_detail].def.id : L""));
     v.Set(L"search", json::Value::Str(g_search));
@@ -1430,14 +1645,30 @@ static void Click(const HotRect& h) {
             if (h.arg >= 0 && h.arg < (int)g_apps[h.index].releases.size()) OpenUrl(g_apps[h.index].releases[h.arg].page);
             break;
         case Hit::DRepo: OpenUrl(L"https://github.com/" + g_apps[h.index].def.repo); break;
-        case Hit::SetTheme: {
-            static const wchar_t* names[] = {L"dark", L"light", L"system"};
-            g_cfg.theme = names[h.arg];
-            ConfigSave();
-            g_t = BuildTheme(g_cfg.theme);
-            ApplyWindowTheme(g_hwnd, g_t);
+        case Hit::ThemeBrowse: Navigate(Page::Themes); break;
+        case Hit::ThemePick: {
+            auto all = AllThemes();
+            if (h.arg >= 0 && h.arg < (int)all.size()) { g_cfg.theme = all[h.arg].id; ConfigSave(); ApplyTheme(); }
             break;
         }
+        case Hit::AccentPick:
+            if (h.arg == 0) g_cfg.accent = L"theme";
+            else if (h.arg == 1) g_cfg.accent = L"windows";
+            else if (h.arg >= 2 && h.arg < 2 + kAccentSwatchCount) g_cfg.accent = HexColor(kAccentSwatches[h.arg - 2]);
+            else if (!PickCustomAccent()) break;
+            ConfigSave();
+            ApplyTheme();
+            break;
+        case Hit::ThemeExport: ExportTheme(); break;
+        case Hit::ThemeFolder:
+            EnsureDir(ThemesDir());
+            ShellExecuteW(g_hwnd, L"open", ThemesDir().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            break;
+        case Hit::ThemeReload:
+            g_customThemes = LoadCustomThemes();
+            ApplyTheme();
+            Toast(std::to_wstring(g_customThemes.size()) + (g_customThemes.size() == 1 ? L" custom theme loaded." : L" custom themes loaded."));
+            break;
         case Hit::SetChannel: g_cfg.beta = h.arg == 1; ConfigSave(); break;
         case Hit::SetHours: g_cfg.checkHours = kHours[h.arg]; ConfigSave(); break;
         case Hit::SetCheckNow: CheckReleases(true); jobs::FetchManifest(g_manifestText); break;
@@ -1539,7 +1770,7 @@ static void OnKey(WPARAM vk) {
         else if (vk == VK_PRIOR) Scroll(g_viewH - 80);
         return;
     }
-    if (g_page == Page::Settings) {
+    if (g_page == Page::Settings || g_page == Page::Themes) {
         if (vk == VK_ESCAPE || vk == VK_BACK) Navigate(Page::Library);
         else if (vk == VK_DOWN) Scroll(-60);
         else if (vk == VK_UP) Scroll(60);
@@ -1696,8 +1927,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_CREATE: {
             g_hwnd = hwnd;
             g_scale = GetDpiForWindow(hwnd) / 96.0f;
-            g_t = BuildTheme(g_cfg.theme);
-            ApplyWindowTheme(hwnd, g_t);
+            g_customThemes = LoadCustomThemes();
+            ApplyTheme();
             jobs::Init(hwnd);
             return 0;
         }
@@ -1732,14 +1963,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_SETTINGCHANGE:
             if (lp && (wcscmp((const wchar_t*)lp, L"ImmersiveColorSet") == 0)) {
-                g_t = BuildTheme(g_cfg.theme);
-                ApplyWindowTheme(hwnd, g_t);
+                ApplyTheme();
                 Invalidate();
             }
             return 0;
         case WM_DWMCOLORIZATIONCOLORCHANGED:
-            g_t = BuildTheme(g_cfg.theme);
-            Invalidate();
+            ApplyTheme();
             return 0;
         case WM_MOUSEMOVE: {
             g_lastInput = GetTickCount();
@@ -1953,7 +2182,7 @@ HWND UiCreate(HINSTANCE inst, int show, const selfupdate::AfterUpdate& after) {
             std::wstring page = v.GetStr(L"page");
             std::wstring detail = v.GetStr(L"detail");
             for (size_t i = 0; i < g_apps.size(); ++i) if (g_apps[i].def.id == detail) g_detail = (int)i;
-            g_page = page == L"settings" ? Page::Settings : (page == L"details" && g_detail >= 0) ? Page::Details : Page::Library;
+            g_page = page == L"settings" ? Page::Settings : page == L"themes" ? Page::Themes : (page == L"details" && g_detail >= 0) ? Page::Details : Page::Library;
             g_scroll = g_scrollTarget = (float)v.GetNum(L"scroll", 0);
             if (v.GetBool(L"minimized", false)) show = SW_SHOWMINNOACTIVE;
             else if (v.GetBool(L"background", false)) show = SW_SHOWNOACTIVATE;

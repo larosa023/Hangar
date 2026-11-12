@@ -72,7 +72,8 @@ Hangar/
 ├─ src/
 │  ├─ main.cpp            single instance, startup
 │  ├─ ui.cpp              window: library, app pages, settings (Direct2D)
-│  ├─ gfx.cpp             Direct2D/DirectWrite helpers, theme
+│  ├─ gfx.cpp             Direct2D/DirectWrite helpers
+│  ├─ themes.cpp          built-in themes, theme files, accent colors
 │  ├─ model.cpp           manifest + releases parsing, install detection, process scan
 │  ├─ jobs.cpp            background work: fetch, download + verify, install/update/uninstall
 │  ├─ selfupdate.cpp      Hangar's own updater: check, stage, handoff, rollback
@@ -93,7 +94,7 @@ Data lives in `%LOCALAPPDATA%\Hangar\`: `settings.json`, `hangar.log`, `cache\` 
 1. **Library, manifest, release checks, install/launch/update/uninstall** ✅ (0.1.0–0.1.1)
 2. **Hangar's own updater with rollback** ✅ (0.1.2). Still to do: versioned app installs (`Hangar\apps\<App>\<ver>\` behind a launcher stub), keeping the last N app versions with manual rollback, parallel "Update all" with idle and game rules
 3. SDK + IPC + state save/restore + live updates, starting with Strata as the reference
-4. Themes and suite-wide live theming
+4. Themes: 14 presets, accent colors and custom theme files ✅ (0.1.4; see [THEMES.md](THEMES.md)). Still to do: font, density, corner and animation settings, and suite-wide live theming through the SDK
 5. Backup/restore, new-PC setup, health dashboard
 6. Publish page with GitHub sign-in (device flow, token kept in Credential Manager)
 7. Tray service, notifications, accessibility (UI Automation), performance tuning

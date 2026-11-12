@@ -14,6 +14,7 @@ void ConfigLoad() {
     if (!json::Parser(text).Parse(v) || v.type != json::Value::Object) { Log(L"settings.json is damaged; using defaults"); return; }
     Config c;
     c.theme = v.GetStr(L"theme", c.theme);
+    c.accent = v.GetStr(L"accent", c.accent);
     c.listView = v.GetBool(L"listView", c.listView);
     c.beta = v.GetBool(L"beta", c.beta);
     c.checkHours = (int)v.GetNum(L"checkHours", c.checkHours);
@@ -38,6 +39,7 @@ void ConfigLoad() {
 void ConfigSave() {
     json::Value v = json::Value::MakeObject();
     v.Set(L"theme", json::Value::Str(g_cfg.theme));
+    v.Set(L"accent", json::Value::Str(g_cfg.accent));
     v.Set(L"listView", json::Value::Boolean(g_cfg.listView));
     v.Set(L"beta", json::Value::Boolean(g_cfg.beta));
     v.Set(L"checkHours", json::Value::Num(g_cfg.checkHours));

@@ -116,51 +116,7 @@ bool BackdropSupported() {
     return s == 1;
 }
 
-static float Luma(D2D1_COLOR_F c) { return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b; }
-
-Theme BuildTheme(const std::wstring& name) {
-    Theme t;
-    t.dark = name == L"light" ? false : name == L"system" ? !SystemUsesLightTheme() : true;
-    t.backdrop = BackdropSupported();
-    D2D1_COLOR_F accent = Rgb(SystemAccent());
-    // keep the accent readable on both backgrounds
-    if (t.dark && Luma(accent) < 0.30f) accent = Mix(accent, Rgb(0xFFFFFF), 0.35f);
-    if (!t.dark && Luma(accent) > 0.55f) accent = Mix(accent, Rgb(0x000000), 0.30f);
-    t.accent = accent;
-    t.accentHover = t.dark ? Mix(accent, Rgb(0xFFFFFF), 0.12f) : Mix(accent, Rgb(0x000000), 0.10f);
-    t.onAccent = Luma(accent) > 0.55f ? Rgb(0x101014) : Rgb(0xFFFFFF);
-    float bgA = t.backdrop ? 0.80f : 1.0f;
-    if (t.dark) {
-        t.bg = Rgb(0x16161A, bgA);
-        t.sidebar = Rgb(0x111114, t.backdrop ? 0.55f : 1.0f);
-        t.surface = Rgb(0x222228);
-        t.surfaceHover = Rgb(0x2A2A31);
-        t.surfaceStrong = Rgb(0x34343C);
-        t.divider = Rgb(0xFFFFFF, 0.08f);
-        t.text = Rgb(0xF2F2F5);
-        t.subtext = Rgb(0xA8A8B3);
-        t.faint = Rgb(0x6E6E7A);
-        t.good = Rgb(0x5BD18B);
-        t.warn = Rgb(0xF2B84B);
-        t.bad = Rgb(0xFF6B6B);
-        t.info = Rgb(0x6CB4FF);
-    } else {
-        t.bg = Rgb(0xF5F5F7, bgA);
-        t.sidebar = Rgb(0xEBEBEF, t.backdrop ? 0.55f : 1.0f);
-        t.surface = Rgb(0xFFFFFF);
-        t.surfaceHover = Rgb(0xF7F7FA);
-        t.surfaceStrong = Rgb(0xE6E6EC);
-        t.divider = Rgb(0x000000, 0.08f);
-        t.text = Rgb(0x16161A);
-        t.subtext = Rgb(0x5C5C68);
-        t.faint = Rgb(0x8E8E9A);
-        t.good = Rgb(0x1F9D57);
-        t.warn = Rgb(0xB7791F);
-        t.bad = Rgb(0xD64545);
-        t.info = Rgb(0x2F6FDB);
-    }
-    return t;
-}
+float Luma(D2D1_COLOR_F c) { return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b; }
 
 void ApplyWindowTheme(HWND hwnd, const Theme& t) {
     BOOL dark = t.dark;
@@ -168,14 +124,15 @@ void ApplyWindowTheme(HWND hwnd, const Theme& t) {
     int corner = 2; /*DWMWCP_ROUND*/
     DwmSetWindowAttribute(hwnd, 33 /*DWMWA_WINDOW_CORNER_PREFERENCE*/, &corner, sizeof(corner));
     if (BackdropSupported()) {
-        int type = t.backdrop ? 2 /*DWMSBT_MAINWINDOW (Mica)*/ : 1 /*DWMSBT_NONE*/;
+        int type = t.backdrop ? t.backdropType : 1 /*DWMSBT_NONE*/;
         DwmSetWindowAttribute(hwnd, 38 /*DWMWA_SYSTEMBACKDROP_TYPE*/, &type, sizeof(type));
         MARGINS m = t.backdrop ? MARGINS{-1, -1, -1, -1} : MARGINS{0, 0, 0, 0};
         DwmExtendFrameIntoClientArea(hwnd, &m);
-    } else {
-        COLORREF cap = t.dark ? RGB(0x16, 0x16, 0x1A) : RGB(0xF5, 0xF5, 0xF7);
-        DwmSetWindowAttribute(hwnd, 35 /*DWMWA_CAPTION_COLOR*/, &cap, sizeof(cap));
     }
+    // a solid title bar that matches the theme (Midnight gets a black one); default over a backdrop
+    COLORREF cap = t.backdrop ? 0xFFFFFFFF /*DWMWA_COLOR_DEFAULT*/
+                              : RGB((t.captionRgb >> 16) & 0xFF, (t.captionRgb >> 8) & 0xFF, t.captionRgb & 0xFF);
+    DwmSetWindowAttribute(hwnd, 35 /*DWMWA_CAPTION_COLOR*/, &cap, sizeof(cap));
 }
 
 } // namespace gfx

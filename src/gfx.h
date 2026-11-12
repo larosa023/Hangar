@@ -19,6 +19,7 @@ IDWriteTextFormat* Format(float size, DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WE
 inline D2D1_COLOR_F Rgb(uint32_t rgb, float a = 1.0f) {
     return D2D1::ColorF(((rgb >> 16) & 0xFF) / 255.f, ((rgb >> 8) & 0xFF) / 255.f, (rgb & 0xFF) / 255.f, a);
 }
+float Luma(D2D1_COLOR_F c);
 inline D2D1_COLOR_F Alpha(D2D1_COLOR_F c, float a) { c.a *= a; return c; }
 inline D2D1_COLOR_F Mix(D2D1_COLOR_F a, D2D1_COLOR_F b, float t) {
     return D2D1::ColorF(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t);
@@ -30,10 +31,10 @@ struct Theme {
     D2D1_COLOR_F bg, sidebar, surface, surfaceHover, surfaceStrong, divider, text, subtext, faint;
     D2D1_COLOR_F accent, accentHover, onAccent, good, warn, bad, info;
     float radius = 8.0f;
-    bool backdrop = false;          // Mica behind the window (Windows 11)
+    bool backdrop = false;          // a DWM backdrop shows through (Windows 11)
+    int backdropType = 1;           // DWMSBT_*: 1 none, 2 Mica, 3 acrylic
+    uint32_t captionRgb = 0x16161A; // title bar color when there's no backdrop
 };
-
-Theme BuildTheme(const std::wstring& name);   // dark | light | system
 bool SystemUsesLightTheme();
 uint32_t SystemAccent();                      // 0xRRGGBB
 bool BackdropSupported();
@@ -83,7 +84,7 @@ constexpr wchar_t Search = 0xE721, Grid = 0xF0E2, List = 0xE8FD, Refresh = 0xE72
     Download = 0xE896, Play = 0xE768, Folder = 0xE8B7, Delete = 0xE74D, Repair = 0xE90F, Cancel = 0xE711,
     Library = 0xE8F1, Update = 0xE895, Check = 0xE73E, Warning = 0xE7BA, Apps = 0xE71D, Link = 0xE71B,
     Windows = 0xE782, Audio = 0xE767, Game = 0xE7FC, Media = 0xE8B2, Work = 0xE821, Installed = 0xE7B8,
-    ChevronRight = 0xE76C, Info = 0xE946, Close = 0xE8BB, Globe = 0xE774, Star = 0xE734;
+    ChevronRight = 0xE76C, Color = 0xE790, Info = 0xE946, Close = 0xE8BB, Globe = 0xE774, Star = 0xE734;
 }
 
 } // namespace gfx
