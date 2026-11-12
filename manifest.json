@@ -66,6 +66,17 @@
       "install": { "type": "velopack", "packId": "Ember", "asset": "Ember-win-Setup.exe" }
     },
     {
+      "id": "isle",
+      "name": "Isle",
+      "repo": "larosa023/Isle",
+      "description": "A Dynamic Island for Windows: music, timers, calls and scores.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Isle/main/src/Isle/Assets/isle.ico",
+      "exe": "Isle.exe",
+      "install": { "type": "portable", "asset": "Isle-standalone.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Isle" },
+      "args": { "quit": "--quit" }
+    },
+    {
       "id": "marq",
       "name": "Marq",
       "repo": "larosa023/Marq",

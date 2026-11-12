@@ -1,6 +1,6 @@
 # Hangar
 
-Home base for the larosa023 suite of Windows apps. From one window, Hangar installs, opens, updates and uninstalls every app in the suite (Foyer, Strata, Breaker, Switch, Faderly, Tonely, Ember, Marq, Mantel, Lumora, Savor, Driftcord, Amplite, Cinder, Relic, Prism, Ripple, Downtime, Drift, Gridline, Fullcourt…).
+Home base for the larosa023 suite of Windows apps. From one window, Hangar installs, opens, updates and uninstalls every app in the suite (Foyer, Strata, Breaker, Switch, Isle, Faderly, Tonely, Ember, Marq, Mantel, Lumora, Savor, Driftcord, Amplite, Cinder, Relic, Prism, Ripple, Downtime, Drift, Gridline, Fullcourt…).
 
 **Status: v0.1.2.** Library, app pages, release checks, and one-click install/open/update/repair/uninstall, with verified downloads and automatic rollback. **Hangar updates itself** (Settings → Hangar updates). 14 themes plus custom theme files (Themes page). Live updates, themes, backup and publishing come in later phases: see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
