@@ -237,6 +237,18 @@
       "icon": "https://raw.githubusercontent.com/larosa023/Gridline/main/build/icon.png",
       "exe": "Gridline.exe",
       "install": { "type": "nsis", "asset": "Gridline-Setup-*.exe", "registry": "Gridline" }
+    },
+    {
+      "id": "rigcard",
+      "name": "Rigcard",
+      "repo": "larosa023/Rigcard",
+      "description": "Your PC build as one shareable card: parts, photo, live temps and benchmarks.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Rigcard/main/res/rigcard.png",
+      "exe": "Rigcard.exe",
+      "install": { "type": "portable", "asset": "Rigcard.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Rigcard" },
+      "args": { "quit": "--quit", "uninstall": "--uninstall" },
+      "liveUpdate": true
     }
   ]
 }
