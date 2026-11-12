@@ -249,6 +249,18 @@
       "install": { "type": "portable", "asset": "Rigcard.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Rigcard" },
       "args": { "quit": "--quit", "uninstall": "--uninstall" },
       "liveUpdate": true
+    },
+    {
+      "id": "outpost",
+      "name": "Outpost",
+      "repo": "larosa023/Outpost",
+      "description": "Host game servers on your PC with one click: Minecraft, Valheim, Palworld and more.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Outpost/main/res/outpost.png",
+      "exe": "Outpost.exe",
+      "install": { "type": "portable", "asset": "Outpost.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Outpost" },
+      "args": { "quit": "--quit" },
+      "liveUpdate": true
     }
   ]
 }
