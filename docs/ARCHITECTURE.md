@@ -46,7 +46,9 @@ Hangar installs portable apps in exactly the place the apps install themselves. 
 
 - The **UI thread** owns all app state. **Background jobs** (`jobs.cpp`) do the network, disk, registry and process work, and post their results back to the window with `PostMessage`. The UI never waits on I/O.
 - **Startup:** the library appears immediately from the cached manifest (or the built-in copy) and cached release data. A background refresh follows.
-- **Release checks:** `GET /repos/{owner}/{repo}/releases` with an `ETag`, so a 304 doesn't use up GitHub's limit of 60 requests an hour. Hangar only goes to the network when the cache is older than the check interval (default 3 hours). If the limit is hit, it stops until GitHub's reset time.
+- **Release checks (from 0.1.5):** the **Release index** workflow (`.github/workflows/index.yml`, run every 10 minutes and whenever `manifest.json` changes) runs `tools/build_index.py` with the workflow's token. It writes every app's recent releases, including asset SHA-256 digests, to `releases.json` on the `index` branch.
+  - Hangar downloads that one file from raw.githubusercontent.com with an `ETag`. That avoids GitHub's API limit of 60 requests an hour for signed-out users, which your apps' own updaters also share.
+  - Hangar falls back to `GET /repos/{owner}/{repo}/releases` only for an app the index doesn't cover, or when the index is more than a day old.
 - **Verification:** every download is checked with SHA-256 against GitHub's asset digest. When the app publishes a checksum file (`SHA256SUMS.txt`, `Switch.exe.sha256`), Hangar also checks against that, and both must agree. A release with no checksum is refused.
 - **Updating an app that's running (Phase 1 fallback):** Hangar closes the app gracefully (with `--quit` if the app supports it, otherwise `WM_CLOSE`). It never kills an app. Then it installs the new version and reopens the app. For single-exe apps the old exe is kept as `.old` until the new one has run for 4 seconds; if the new one fails, Hangar restores the old one and reopens it.
 

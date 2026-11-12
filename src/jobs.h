@@ -73,7 +73,12 @@ void StartOp(const OpRequest& req);
 void CancelOp(const std::wstring& id);
 int ActiveOps();
 
-long long RateLimitedUntil();
+long long RateLimitedUntil();      // unix seconds; 0 when not rate limited
+
+// The release index (releases.json on the Hangar repo's `index` branch): every app's releases in one
+// file that isn't subject to GitHub's API limit. Gives the releases array for one repo as JSON text.
+// `maxAgeSecs`: reuse the copy fetched this recently. False if the index doesn't cover the repo.
+bool IndexReleases(const std::wstring& repo, long long maxAgeSecs, std::string& body);
 
 // Finds an asset's hash in a SHA256SUMS-style file ("<hex>  <name>" lines). "" if absent.
 std::wstring ExpectedHashFromSums(const std::string& sums, const std::wstring& assetName);      // unix seconds; 0 when not rate limited

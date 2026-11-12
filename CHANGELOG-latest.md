@@ -1,12 +1,10 @@
-## Hangar 0.1.4
+## Hangar 0.1.5
 
-**Themes.** A new **Themes** page in the sidebar has 14 themes with live previews. Click one and it changes right away.
-- **Dark, Light,** and **Windows** (follows Windows light/dark mode)
-- **Midnight:** pure black for OLED screens
-- **Glass:** see-through over your wallpaper (Windows 11)
-- **Frost, Twilight, Forest, Sunset, Ocean, Rose, Graphite**
-- **Paper** and **Mist:** two softer light themes
+**No more "GitHub limit reached".** Without a GitHub sign-in, GitHub allows only 60 release checks an hour, and Hangar was using 22 per refresh while sharing that budget with your apps' own updaters. Now:
+- A job in the Hangar repo collects every app's releases into one file every 10 minutes.
+- Hangar downloads that one file, which isn't counted against the limit, instead of calling GitHub once per app.
+- If the file is ever missing or out of date, Hangar falls back to asking GitHub directly, as before.
 
-**Accent color:** the theme's own, your Windows accent, 9 swatches, or any custom color.
+Downloads are still verified against each release's SHA-256.
 
-**Theme files:** save the current look as a `.json` file to tweak or share it. Any theme files you drop in the themes folder show up in the gallery. See docs/THEMES.md for the format.
+**Isle** has joined the library under Windows replacements.

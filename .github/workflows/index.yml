@@ -1,0 +1,50 @@
+name: Release index
+
+# Collects every suite app's recent releases into releases.json on the `index` branch.
+# Hangar reads that one file instead of calling the GitHub API per app (60 calls/hour limit).
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  push:
+    branches: [main]
+    paths: [manifest.json, tools/build_index.py, .github/workflows/index.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-index
+  cancel-in-progress: false
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the current index
+        run: |
+          git fetch --depth=1 origin index:index 2>/dev/null && git show index:releases.json > /tmp/prev.json || echo '{}' > /tmp/prev.json
+
+      - name: Build releases.json
+        id: build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          result=$(python3 tools/build_index.py /tmp/releases.json /tmp/prev.json)
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+          echo "$result"
+
+      - name: Publish to the index branch
+        if: steps.build.outputs.result == 'written'
+        run: |
+          dir=$(mktemp -d)
+          cp /tmp/releases.json "$dir/"
+          cd "$dir"
+          git init -q
+          git checkout -q --orphan index
+          git add releases.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Release index"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" index

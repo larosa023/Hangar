@@ -48,11 +48,13 @@ void Check(HWND notify, bool force) {
     std::thread([beta, force] {
         PostState(SelfUpdateState::Checking);
         AppDef def = HangarDef();
-        net::Response r;
-        std::wstring url = net::ApiBase() + L"/repos/" + def.repo + L"/releases?per_page=10";
         std::vector<ReleaseInfo> rels;
         std::wstring err;
-        if (!net::Get(url, r, L"", true)) err = r.error;
+        std::string indexed;
+        net::Response r;
+        std::wstring url = net::ApiBase() + L"/repos/" + def.repo + L"/releases?per_page=10";
+        if (jobs::IndexReleases(def.repo, force ? 30 : 10 * 60, indexed)) ParseReleases(indexed, def, rels, &err);
+        else if (!net::Get(url, r, L"", true)) err = r.error;
         else if (r.status != 200) err = r.status == 403 || r.status == 429 ? L"GitHub's hourly limit was reached; Hangar will try again later."
                                                                             : L"GitHub answered with HTTP " + std::to_wstring(r.status) + L".";
         else ParseReleases(r.body, def, rels, &err);
