@@ -1,23 +1,46 @@
 {
   "schema": 1,
   "categories": [
-    { "id": "windows", "name": "Windows replacements" },
-    { "id": "audio", "name": "Audio" },
-    { "id": "gaming", "name": "Gaming" },
-    { "id": "media", "name": "Media" },
-    { "id": "work", "name": "Work" }
+    {
+      "id": "windows",
+      "name": "Windows replacements"
+    },
+    {
+      "id": "audio",
+      "name": "Audio"
+    },
+    {
+      "id": "gaming",
+      "name": "Gaming"
+    },
+    {
+      "id": "media",
+      "name": "Media"
+    },
+    {
+      "id": "work",
+      "name": "Work"
+    }
   ],
   "apps": [
     {
       "id": "foyer",
       "name": "Foyer",
       "repo": "larosa023/Foyer",
-      "description": "A fast, fully customizable Start menu.",
+      "description": "A fast, fully customizable Start menu with real search.",
       "category": "windows",
       "icon": "https://raw.githubusercontent.com/larosa023/Foyer/main/res/foyer.png",
       "exe": "Foyer.exe",
-      "install": { "type": "portable", "asset": "Foyer.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Foyer" },
-      "args": { "quit": "--quit" },
+      "install": {
+        "type": "portable",
+        "asset": "Foyer.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Foyer"
+      },
+      "args": {
+        "quit": "--quit",
+        "uninstall": "--uninstall"
+      },
       "critical": true
     },
     {
@@ -28,8 +51,16 @@
       "category": "windows",
       "icon": "https://raw.githubusercontent.com/larosa023/Strata/main/res/strata.png",
       "exe": "Strata.exe",
-      "install": { "type": "portable", "asset": "Strata.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Strata" },
-      "args": { "quit": "--quit", "uninstall": "--uninstall" },
+      "install": {
+        "type": "portable",
+        "asset": "Strata.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Strata"
+      },
+      "args": {
+        "quit": "--quit",
+        "uninstall": "--uninstall"
+      },
       "critical": true
     },
     {
@@ -40,8 +71,16 @@
       "category": "windows",
       "icon": "https://raw.githubusercontent.com/larosa023/Breaker/main/res/breaker.png",
       "exe": "Breaker.exe",
-      "install": { "type": "portable", "asset": "Breaker.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Breaker" },
-      "args": { "quit": "--quit", "uninstall": "--uninstall" }
+      "install": {
+        "type": "portable",
+        "asset": "Breaker.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Breaker"
+      },
+      "args": {
+        "quit": "--quit",
+        "uninstall": "--uninstall"
+      }
     },
     {
       "id": "switch",
@@ -51,8 +90,15 @@
       "category": "windows",
       "icon": "https://raw.githubusercontent.com/larosa023/Switch/main/assets/switch.png",
       "exe": "Switch.exe",
-      "install": { "type": "portable", "asset": "Switch.exe", "checksums": "Switch.exe.sha256", "dir": "%LOCALAPPDATA%\\Programs\\Switch" },
-      "args": { "quit": "--quit" },
+      "install": {
+        "type": "portable",
+        "asset": "Switch.exe",
+        "checksums": "Switch.exe.sha256",
+        "dir": "%LOCALAPPDATA%\\Programs\\Switch"
+      },
+      "args": {
+        "quit": "--quit"
+      },
       "critical": true
     },
     {
@@ -63,7 +109,11 @@
       "category": "windows",
       "icon": "https://raw.githubusercontent.com/larosa023/Ember/main/src/Ember/Assets/ember.ico",
       "exe": "Ember.exe",
-      "install": { "type": "velopack", "packId": "Ember", "asset": "Ember-win-Setup.exe" }
+      "install": {
+        "type": "velopack",
+        "packId": "Ember",
+        "asset": "Ember-win-Setup.exe"
+      }
     },
     {
       "id": "isle",
@@ -73,8 +123,15 @@
       "category": "windows",
       "icon": "https://raw.githubusercontent.com/larosa023/Isle/main/src/Isle/Assets/isle.ico",
       "exe": "Isle.exe",
-      "install": { "type": "portable", "asset": "Isle-standalone.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Isle" },
-      "args": { "quit": "--quit" }
+      "install": {
+        "type": "portable",
+        "asset": "Isle-standalone.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Isle"
+      },
+      "args": {
+        "quit": "--quit"
+      }
     },
     {
       "id": "marq",
@@ -84,7 +141,11 @@
       "category": "windows",
       "icon": "https://raw.githubusercontent.com/larosa023/Marq/main/assets/marq.png",
       "exe": "Marq.exe",
-      "install": { "type": "portable", "asset": "Marq.exe", "dir": "%LOCALAPPDATA%\\Programs\\Marq" }
+      "install": {
+        "type": "portable",
+        "asset": "Marq.exe",
+        "dir": "%LOCALAPPDATA%\\Programs\\Marq"
+      }
     },
     {
       "id": "mantel",
@@ -94,7 +155,12 @@
       "category": "windows",
       "icon": "https://raw.githubusercontent.com/larosa023/Mantel/main/src/Mantel/Assets/mantel.ico",
       "exe": "Mantel.exe",
-      "install": { "type": "velopack", "packId": "Mantel", "asset": "Mantel-win-Setup.exe", "betaAsset": "Mantel-beta-Setup.exe" }
+      "install": {
+        "type": "velopack",
+        "packId": "Mantel",
+        "asset": "Mantel-win-Setup.exe",
+        "betaAsset": "Mantel-beta-Setup.exe"
+      }
     },
     {
       "id": "faderly",
@@ -104,7 +170,11 @@
       "category": "audio",
       "icon": "https://raw.githubusercontent.com/larosa023/Faderly/main/src/Faderly/Assets/Faderly.png",
       "exe": "Faderly.exe",
-      "install": { "type": "velopack", "packId": "Faderly", "asset": "Faderly-win-Setup.exe" },
+      "install": {
+        "type": "velopack",
+        "packId": "Faderly",
+        "asset": "Faderly-win-Setup.exe"
+      },
       "critical": true
     },
     {
@@ -115,7 +185,11 @@
       "category": "audio",
       "icon": "https://raw.githubusercontent.com/larosa023/Tonely/main/src/Tonely/Assets/tonely.png",
       "exe": "Tonely.exe",
-      "install": { "type": "velopack", "packId": "Tonely", "asset": "Tonely-win-Setup.exe" }
+      "install": {
+        "type": "velopack",
+        "packId": "Tonely",
+        "asset": "Tonely-win-Setup.exe"
+      }
     },
     {
       "id": "lumora",
@@ -125,7 +199,11 @@
       "category": "gaming",
       "icon": "https://raw.githubusercontent.com/larosa023/Lumora/main/src-tauri/icons/icon.png",
       "exe": "Lumora.exe",
-      "install": { "type": "nsis", "asset": "Lumora_*_x64-setup.exe", "registry": "Lumora" }
+      "install": {
+        "type": "nsis",
+        "asset": "Lumora_*_x64-setup.exe",
+        "registry": "Lumora"
+      }
     },
     {
       "id": "savor",
@@ -135,7 +213,11 @@
       "category": "gaming",
       "icon": "https://raw.githubusercontent.com/larosa023/Savor-/main/docs/icon.png",
       "exe": "Savor.exe",
-      "install": { "type": "portable", "asset": "Savor.exe", "dir": "%LOCALAPPDATA%\\Programs\\Savor" }
+      "install": {
+        "type": "portable",
+        "asset": "Savor.exe",
+        "dir": "%LOCALAPPDATA%\\Programs\\Savor"
+      }
     },
     {
       "id": "cinder",
@@ -145,7 +227,11 @@
       "category": "gaming",
       "icon": "https://raw.githubusercontent.com/larosa023/Cinder/main/assets/cinder.png",
       "exe": "Cinder.exe",
-      "install": { "type": "portable", "asset": "Cinder.exe", "dir": "%LOCALAPPDATA%\\Programs\\Cinder" }
+      "install": {
+        "type": "portable",
+        "asset": "Cinder.exe",
+        "dir": "%LOCALAPPDATA%\\Programs\\Cinder"
+      }
     },
     {
       "id": "relic",
@@ -155,7 +241,11 @@
       "category": "gaming",
       "icon": "https://raw.githubusercontent.com/larosa023/Relic/main/assets/relic.png",
       "exe": "Relic.exe",
-      "install": { "type": "portable", "asset": "Relic.exe", "dir": "%LOCALAPPDATA%\\Programs\\Relic" }
+      "install": {
+        "type": "portable",
+        "asset": "Relic.exe",
+        "dir": "%LOCALAPPDATA%\\Programs\\Relic"
+      }
     },
     {
       "id": "downtime",
@@ -165,7 +255,11 @@
       "category": "gaming",
       "icon": "https://raw.githubusercontent.com/larosa023/Downtime/main/src-tauri/icons/icon.png",
       "exe": "Downtime.exe",
-      "install": { "type": "nsis", "asset": "Downtime_*_x64-setup.exe", "registry": "Downtime" }
+      "install": {
+        "type": "nsis",
+        "asset": "Downtime_*_x64-setup.exe",
+        "registry": "Downtime"
+      }
     },
     {
       "id": "driftcord",
@@ -175,7 +269,11 @@
       "category": "media",
       "icon": "https://raw.githubusercontent.com/larosa023/Driftcord/main/src-tauri/icons/128x128.png",
       "exe": "Driftcord.exe",
-      "install": { "type": "nsis", "asset": "Driftcord_*_x64-setup.exe", "registry": "Driftcord" }
+      "install": {
+        "type": "nsis",
+        "asset": "Driftcord_*_x64-setup.exe",
+        "registry": "Driftcord"
+      }
     },
     {
       "id": "amplite",
@@ -185,7 +283,11 @@
       "category": "media",
       "icon": "https://raw.githubusercontent.com/larosa023/Amplite/main/build/icon.png",
       "exe": "Amplite.exe",
-      "install": { "type": "nsis", "asset": "Amplite-Setup-*.exe", "registry": "Amplite" }
+      "install": {
+        "type": "nsis",
+        "asset": "Amplite-Setup-*.exe",
+        "registry": "Amplite"
+      }
     },
     {
       "id": "prism",
@@ -195,7 +297,11 @@
       "category": "media",
       "icon": "https://raw.githubusercontent.com/larosa023/Prism/main/build/icon.png",
       "exe": "Prism.exe",
-      "install": { "type": "nsis", "asset": "Prism-Setup-*.exe", "registry": "Prism" }
+      "install": {
+        "type": "nsis",
+        "asset": "Prism-Setup-*.exe",
+        "registry": "Prism"
+      }
     },
     {
       "id": "ripple",
@@ -205,7 +311,11 @@
       "category": "media",
       "icon": "https://raw.githubusercontent.com/larosa023/Ripple/main/src-tauri/icons/icon.png",
       "exe": "Ripple.exe",
-      "install": { "type": "nsis", "asset": "Ripple_*_x64-setup.exe", "registry": "Ripple" }
+      "install": {
+        "type": "nsis",
+        "asset": "Ripple_*_x64-setup.exe",
+        "registry": "Ripple"
+      }
     },
     {
       "id": "fullcourt",
@@ -216,7 +326,11 @@
       "icon": "https://raw.githubusercontent.com/larosa023/fullcourt/main/icon-192.png",
       "exe": "Fullcourt.exe",
       "tagPrefix": "desktop-v",
-      "install": { "type": "nsis", "asset": "Fullcourt-Setup.exe", "registry": "Fullcourt" }
+      "install": {
+        "type": "nsis",
+        "asset": "Fullcourt-Setup.exe",
+        "registry": "Fullcourt"
+      }
     },
     {
       "id": "drift",
@@ -226,7 +340,11 @@
       "category": "work",
       "icon": "https://raw.githubusercontent.com/larosa023/drift-browser/main/build/icon.png",
       "exe": "Drift.exe",
-      "install": { "type": "nsis", "asset": "Drift-Setup-*.exe", "registry": "Drift" }
+      "install": {
+        "type": "nsis",
+        "asset": "Drift-Setup-*.exe",
+        "registry": "Drift"
+      }
     },
     {
       "id": "gridline",
@@ -236,7 +354,11 @@
       "category": "work",
       "icon": "https://raw.githubusercontent.com/larosa023/Gridline/main/build/icon.png",
       "exe": "Gridline.exe",
-      "install": { "type": "nsis", "asset": "Gridline-Setup-*.exe", "registry": "Gridline" }
+      "install": {
+        "type": "nsis",
+        "asset": "Gridline-Setup-*.exe",
+        "registry": "Gridline"
+      }
     },
     {
       "id": "rigcard",
@@ -246,8 +368,16 @@
       "category": "gaming",
       "icon": "https://raw.githubusercontent.com/larosa023/Rigcard/main/res/rigcard.png",
       "exe": "Rigcard.exe",
-      "install": { "type": "portable", "asset": "Rigcard.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Rigcard" },
-      "args": { "quit": "--quit", "uninstall": "--uninstall" },
+      "install": {
+        "type": "portable",
+        "asset": "Rigcard.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Rigcard"
+      },
+      "args": {
+        "quit": "--quit",
+        "uninstall": "--uninstall"
+      },
       "liveUpdate": true
     },
     {
@@ -258,8 +388,15 @@
       "category": "gaming",
       "icon": "https://raw.githubusercontent.com/larosa023/Outpost/main/res/outpost.png",
       "exe": "Outpost.exe",
-      "install": { "type": "portable", "asset": "Outpost.exe", "checksums": "SHA256SUMS.txt", "dir": "%LOCALAPPDATA%\\Programs\\Outpost" },
-      "args": { "quit": "--quit" },
+      "install": {
+        "type": "portable",
+        "asset": "Outpost.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Outpost"
+      },
+      "args": {
+        "quit": "--quit"
+      },
       "liveUpdate": true
     }
   ]
