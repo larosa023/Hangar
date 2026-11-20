@@ -398,6 +398,26 @@
         "quit": "--quit"
       },
       "liveUpdate": true
+    },
+    {
+      "id": "halo",
+      "name": "Halo",
+      "repo": "larosa023/Halo",
+      "description": "Battery, DPI and polling rate for the Finalmouse UltralightX.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Halo/main/res/halo.png",
+      "exe": "HaloMouse.exe",
+      "install": {
+        "type": "portable",
+        "asset": "HaloMouse.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Halo"
+      },
+      "args": {
+        "quit": "--quit",
+        "uninstall": "--uninstall"
+      },
+      "liveUpdate": true
     }
   ]
 }
