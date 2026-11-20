@@ -406,10 +406,10 @@
       "description": "Battery, DPI and polling rate for the Finalmouse UltralightX.",
       "category": "gaming",
       "icon": "https://raw.githubusercontent.com/larosa023/Halo/main/res/halo.png",
-      "exe": "Halo.exe",
+      "exe": "HaloMouse.exe",
       "install": {
         "type": "portable",
-        "asset": "Halo.exe",
+        "asset": "HaloMouse.exe",
         "checksums": "SHA256SUMS.txt",
         "dir": "%LOCALAPPDATA%\\Programs\\Halo"
       },
