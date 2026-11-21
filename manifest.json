@@ -453,6 +453,24 @@
       "args": {
         "quit": "--quit"
       }
+    },
+    {
+      "id": "pitstop",
+      "name": "Pitstop",
+      "repo": "larosa023/Pitstop",
+      "description": "A clean NVIDIA driver manager: newest drivers, driver-only installs, one-click rollback and game settings.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Pitstop/main/src/Pitstop/Assets/pitstop.png",
+      "exe": "Pitstop.exe",
+      "install": {
+        "type": "portable",
+        "asset": "Pitstop.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Pitstop"
+      },
+      "args": {
+        "quit": "--quit"
+      }
     }
   ]
 }
