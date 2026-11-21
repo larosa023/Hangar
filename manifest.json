@@ -398,6 +398,24 @@
         "quit": "--quit"
       },
       "liveUpdate": true
+    },
+    {
+      "id": "reticle",
+      "name": "Reticle",
+      "repo": "larosa023/Reticle",
+      "description": "A lightweight in-game FPS overlay and crosshair. No injection, safe with anti-cheat.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Reticle/main/res/reticle.png",
+      "exe": "Reticle.exe",
+      "install": {
+        "type": "portable",
+        "asset": "Reticle.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Reticle"
+      },
+      "args": {
+        "quit": "--quit"
+      }
     }
   ]
 }
