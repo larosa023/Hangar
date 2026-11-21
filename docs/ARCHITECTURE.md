@@ -64,6 +64,13 @@ Hangar is one exe that can live anywhere, so it updates itself like this:
 4. If the event doesn't arrive within 20 s, or the new copy quits, the old copy deletes the new exe, renames itself back, shows its window again, and adds that version to `skipVersion`.
 5. The new copy keeps the previous exe in `versions\<ver>\` (the last 2). **Settings → Hangar updates → Roll back** uses the same handoff.
 
+### Performance notes (0.1.6)
+- **Drawing:** text layouts are cached between frames (`gfx::Layout`, keyed by text, format and box size) and evicted when unused. Nothing in a paint touches the disk or the registry.
+- **Text quality:** themes without a backdrop use an opaque render target with ClearType. Backdrop themes need a premultiplied target, which limits text to grayscale.
+- **Background work:** short jobs run on a pool of up to 4 workers that exit after 60 s idle. Installs and updates get dedicated threads. Process polls are coalesced, at 2.5 s while Hangar is in front and 7 s when it isn't, and stop when minimized.
+- **Memory:** decoded icon pixels are freed once uploaded to the GPU and decoded again from the disk cache if the device is lost. Minimizing clears text caches and trims the working set.
+- **Measuring:** `hangar.log` always records time-to-first-frame and memory after one minute. Set `HANGAR_PERF=1` for per-frame timings.
+
 ## 4. Project structure
 
 ```

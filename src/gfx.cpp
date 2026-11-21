@@ -4,6 +4,7 @@
 #include <dwmapi.h>
 #include <map>
 #include <tuple>
+#include <unordered_map>
 
 namespace gfx {
 
@@ -62,8 +63,73 @@ IDWriteTextFormat* Format(float size, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALI
     return f;
 }
 
+// ---------------------------------------------------------------- text caches
+struct LayoutKey {
+    IDWriteTextFormat* f;
+    int w, h;   // in quarter DIPs
+    std::wstring s;
+    bool operator==(const LayoutKey& o) const { return f == o.f && w == o.w && h == o.h && s == o.s; }
+};
+struct LayoutKeyHash {
+    size_t operator()(const LayoutKey& k) const {
+        size_t x = std::hash<std::wstring>()(k.s);
+        x ^= std::hash<void*>()(k.f) + 0x9e3779b9 + (x << 6) + (x >> 2);
+        x ^= (size_t)k.w * 1315423911u ^ (size_t)k.h * 2654435761u;
+        return x;
+    }
+};
+struct LayoutEntry { IDWriteTextLayout* layout; unsigned lastFrame; };
+static std::unordered_map<LayoutKey, LayoutEntry, LayoutKeyHash> s_layouts;
+static std::unordered_map<LayoutKey, float, LayoutKeyHash> s_widths, s_heights;
+static unsigned s_frame = 0;
+
+IDWriteTextLayout* Layout(const std::wstring& s, IDWriteTextFormat* f, float w, float h) {
+    if (!f || s.empty() || w <= 0 || h <= 0) return nullptr;
+    LayoutKey k{f, (int)(w * 4 + 0.5f), (int)(h * 4 + 0.5f), s};
+    auto it = s_layouts.find(k);
+    if (it != s_layouts.end()) { it->second.lastFrame = s_frame; return it->second.layout; }
+    IDWriteTextLayout* l = nullptr;
+    if (FAILED(dw->CreateTextLayout(s.c_str(), (UINT32)s.size(), f, k.w / 4.0f, k.h / 4.0f, &l))) return nullptr;
+    s_layouts.emplace(std::move(k), LayoutEntry{l, s_frame});
+    return l;
+}
+
+void FrameDone() {
+    ++s_frame;
+    // a long window resize makes new sizes every frame; don't let that pile up
+    if (s_layouts.size() > 12000) { ClearTextCaches(); return; }
+    // every ~4 seconds of frames, let go of layouts nobody drew lately (scrolled away, old text)
+    if (s_frame % 240 != 0 && s_layouts.size() < 6000) return;
+    for (auto it = s_layouts.begin(); it != s_layouts.end();) {
+        if (s_frame - it->second.lastFrame > 240) { it->second.layout->Release(); it = s_layouts.erase(it); }
+        else ++it;
+    }
+    if (s_widths.size() > 4000) s_widths.clear();
+    if (s_heights.size() > 2000) s_heights.clear();
+}
+
+void ClearTextCaches() {
+    for (auto& kv : s_layouts) kv.second.layout->Release();
+    s_layouts.clear();
+    s_widths.clear();
+    s_heights.clear();
+}
+
+void Canvas::Text(const std::wstring& s, IDWriteTextFormat* f, const D2D1_RECT_F& r, D2D1_COLOR_F c) {
+    if (!f || s.empty()) return;
+    float w = r.right - r.left, h = r.bottom - r.top;
+    if (w <= 0.5f || h <= 0.5f) return;
+    IDWriteTextLayout* l = Layout(s, f, w, h);
+    if (!l) return;
+    br->SetColor(c);
+    rt->DrawTextLayout(D2D1::Point2F(r.left, r.top), l, br, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+}
+
 float MeasureWidth(const std::wstring& s, IDWriteTextFormat* f) {
     if (!f || s.empty()) return 0;
+    LayoutKey k{f, 0, 0, s};
+    auto it = s_widths.find(k);
+    if (it != s_widths.end()) return it->second;
     IDWriteTextLayout* l = nullptr;
     float w = 0;
     if (SUCCEEDED(dw->CreateTextLayout(s.c_str(), (UINT32)s.size(), f, 10000.f, 1000.f, &l))) {
@@ -71,11 +137,15 @@ float MeasureWidth(const std::wstring& s, IDWriteTextFormat* f) {
         if (SUCCEEDED(l->GetMetrics(&m))) w = m.widthIncludingTrailingWhitespace;
         l->Release();
     }
+    s_widths.emplace(std::move(k), w);
     return w;
 }
 
 float MeasureHeight(const std::wstring& s, IDWriteTextFormat* f, float width) {
     if (!f || s.empty()) return 0;
+    LayoutKey k{f, (int)(width * 4 + 0.5f), 0, s};
+    auto it = s_heights.find(k);
+    if (it != s_heights.end()) return it->second;
     IDWriteTextLayout* l = nullptr;
     float h = 0;
     if (SUCCEEDED(dw->CreateTextLayout(s.c_str(), (UINT32)s.size(), f, width, 100000.f, &l))) {
@@ -83,24 +153,40 @@ float MeasureHeight(const std::wstring& s, IDWriteTextFormat* f, float width) {
         if (SUCCEEDED(l->GetMetrics(&m))) h = m.height;
         l->Release();
     }
+    s_heights.emplace(std::move(k), h);
     return h;
 }
 
 // ---------------------------------------------------------------- theme
-bool SystemUsesLightTheme() {
+static int s_light = -1;
+static int64_t s_accent = -1;
+
+void InvalidateSystemColors() { s_light = -1; s_accent = -1; }
+
+static bool ReadSystemUsesLightTheme() {
     DWORD v = 0, size = sizeof(v);
     if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
                      L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &v, &size) != ERROR_SUCCESS) return false;
     return v != 0;
 }
 
-uint32_t SystemAccent() {
+bool SystemUsesLightTheme() {
+    if (s_light < 0) s_light = ReadSystemUsesLightTheme() ? 1 : 0;
+    return s_light == 1;
+}
+
+static uint32_t ReadSystemAccent() {
     DWORD v = 0, size = sizeof(v);
     if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\DWM", L"AccentColor", RRF_RT_REG_DWORD, nullptr, &v, &size) == ERROR_SUCCESS) {
         // stored as 0xAABBGGRR
         return ((v & 0xFF) << 16) | (v & 0xFF00) | ((v >> 16) & 0xFF);
     }
     return 0x4F8CFF;
+}
+
+uint32_t SystemAccent() {
+    if (s_accent < 0) s_accent = ReadSystemAccent();
+    return (uint32_t)s_accent;
 }
 
 bool BackdropSupported() {

@@ -11,6 +11,7 @@
 #include "json.h"
 #include "themes.h"
 #include <windowsx.h>
+#include <psapi.h>
 #include <shellapi.h>
 #include <commdlg.h>
 #include <dwmapi.h>
@@ -39,7 +40,8 @@ struct AppState {
     float shownPercent = 0;
     std::wstring opText;
     std::wstring lastError;
-    std::vector<uint8_t> iconPixels;
+    std::vector<std::wstring> notes;    // cleaned release notes, parallel to releases
+    std::vector<uint8_t> iconPixels;    // decoded icon, freed once it's on the GPU
     UINT iconW = 0, iconH = 0;
     ID2D1Bitmap* icon = nullptr;
     float hover = 0;
@@ -52,6 +54,7 @@ enum class Hit {
     DAction, DCancel, DOpenFolder, DRepair, DUninstall, DLocate, DChannel, DReleasePage, DRepo,
     SetTheme, SetChannel, SetHours, SetCheckNow, SetOpenData, SetOpenLog, SetLocalManifest, SetRepo, ToastClose,
     ThemePick, AccentPick, ThemeExport, ThemeFolder, ThemeReload, ThemeBrowse,
+    ScrollThumb, ScrollTrack,
     SelfRestart, SelfCheck, SelfChannel, SelfAuto, SelfRollback, WhatsNewClose,
 };
 
@@ -67,10 +70,13 @@ static HWND g_hwnd;
 static ID2D1HwndRenderTarget* g_rt;
 static ID2D1SolidColorBrush* g_br;
 static Theme g_t;
+static bool g_rtOpaque = false;     // render target made for an opaque theme (ClearType text)
 static std::vector<ThemeDef> g_customThemes;
 
+static void DiscardDevice();
 static void ApplyTheme() {
     g_t = MakeTheme(FindTheme(g_cfg.theme, g_customThemes), g_cfg.accent);
+    if (g_rt && g_rtOpaque != !g_t.backdrop) DiscardDevice();   // switch between ClearType and see-through
     if (g_hwnd) { ApplyWindowTheme(g_hwnd, g_t); InvalidateRect(g_hwnd, nullptr, FALSE); }
 }
 static float g_scale = 1.0f;
@@ -85,6 +91,8 @@ static std::wstring g_nav = L"all";       // all | installed | updates | <catego
 static int g_detail = -1;
 static std::wstring g_search;
 static bool g_searchFocus = false;
+static bool g_searchAll = false;           // Ctrl+A: the next key replaces the whole search
+static bool g_suppressBack = false;
 static bool g_caretOn = true;
 static int g_focus = -1;                   // keyboard focus in the library (index into visible list)
 static bool g_keyboardMode = false;
@@ -108,7 +116,7 @@ static bool g_offline = false;
 static DWORD g_lastScan = 0;
 static std::vector<int> g_visible;          // indices into g_apps shown on the library page
 
-enum : UINT_PTR { TIMER_ANIM = 1, TIMER_CARET, TIMER_PROCS, TIMER_CHECK, TIMER_TOAST, TIMER_SELF, TIMER_HEALTHY };
+enum : UINT_PTR { TIMER_MEMNOTE = 90, TIMER_ANIM = 1, TIMER_CARET, TIMER_PROCS, TIMER_CHECK, TIMER_TOAST, TIMER_SELF, TIMER_HEALTHY };
 static bool g_animTimer = false;
 
 // Hangar's own updater
@@ -119,6 +127,7 @@ static bool g_applyWhenIdle = false;
 static std::wstring g_whatsNew;            // shown once after Hangar updates itself
 static std::wstring g_whatsNewVersion;
 static selfupdate::AfterUpdate g_after;
+static std::vector<selfupdate::Previous> g_prevVersions;   // read from disk when Settings opens, not every frame
 
 static void Invalidate() { if (g_hwnd) InvalidateRect(g_hwnd, nullptr, FALSE); }
 static void StartAnim() {
@@ -334,11 +343,16 @@ static void OpenFolder(AppState& a) {
 static void OpenUrl(const std::wstring& url) { ShellExecuteW(g_hwnd, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL); }
 
 // ---------------------------------------------------------------- refresh
-static void ScanAll() {
+// rediscover: also look again at shortcuts, startup entries and processes (Refresh / F5 only;
+// switching back to Hangar shouldn't walk the whole Start menu every time)
+static void ScanAll(bool rediscover = false) {
     g_lastScan = GetTickCount();
-    InvalidateDiscoveryCache();
+    if (rediscover) InvalidateDiscoveryCache();
     jobs::Scan(g_manifest.apps);
 }
+
+// "Running" only needs to be current when you're looking: poll faster while Hangar is in front
+static UINT ProcPollMs() { return GetForegroundWindow() == g_hwnd ? 2500 : 7000; }
 
 static void PollProcesses() {
     std::vector<std::wstring> ids, exes, dirs;
@@ -402,8 +416,12 @@ static void ApplyManifest(const std::wstring& text, bool fromNetwork) {
 }
 
 // ---------------------------------------------------------------- render target
+static bool g_iconsLost = false;
+static ID2D1Layer* g_previewLayer = nullptr;
+
 static void DiscardDevice() {
-    for (auto& a : g_apps) SafeRelease(a.icon);
+    for (auto& a : g_apps) if (a.icon) { SafeRelease(a.icon); g_iconsLost = true; }
+    SafeRelease(g_previewLayer);
     SafeRelease(g_br);
     SafeRelease(g_rt);
 }
@@ -412,14 +430,22 @@ static bool EnsureDevice() {
     if (g_rt) return true;
     RECT rc;
     GetClientRect(g_hwnd, &rc);
+    // Over a Mica/acrylic backdrop the window needs real transparency, which limits text to grayscale
+    // antialiasing. Solid themes get an opaque target, so text renders with ClearType: noticeably crisper.
+    g_rtOpaque = !g_t.backdrop;
     D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
-        D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+        D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, g_rtOpaque ? D2D1_ALPHA_MODE_IGNORE : D2D1_ALPHA_MODE_PREMULTIPLIED));
     UINT dpi = GetDpiForWindow(g_hwnd);
     props.dpiX = props.dpiY = (float)dpi;
     if (FAILED(d2d->CreateHwndRenderTarget(props, D2D1::HwndRenderTargetProperties(g_hwnd, D2D1::SizeU(std::max<LONG>(1, rc.right), std::max<LONG>(1, rc.bottom)),
                                            D2D1_PRESENT_OPTIONS_NONE), &g_rt))) return false;
-    g_rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+    g_rt->SetTextAntialiasMode(g_rtOpaque ? D2D1_TEXT_ANTIALIAS_MODE_DEFAULT : D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
     g_rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0), &g_br);
+    if (g_iconsLost) {
+        // icon pixels are freed once uploaded; decode them again (from the disk cache) for the new device
+        g_iconsLost = false;
+        for (auto& a : g_apps) if (!a.icon && a.iconPixels.empty()) jobs::FetchIcon(a.def, IconPx());
+    }
     return true;
 }
 
@@ -427,6 +453,7 @@ static ID2D1Bitmap* IconBitmap(AppState& a) {
     if (a.icon || a.iconPixels.empty() || !g_rt) return a.icon;
     D2D1_BITMAP_PROPERTIES bp = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96, 96);
     g_rt->CreateBitmap(D2D1::SizeU(a.iconW, a.iconH), a.iconPixels.data(), a.iconW * 4, bp, &a.icon);
+    if (a.icon) std::vector<uint8_t>().swap(a.iconPixels);   // the GPU has it now
     return a.icon;
 }
 
@@ -757,6 +784,12 @@ static void DrawCardAction(AppState& a, int i, const D2D1_RECT_F& r) {
 
 static void DrawCard(int i, const D2D1_RECT_F& r, bool focused) {
     AppState& a = g_apps[i];
+    if (a.hover > 0.02f) {
+        // a soft shadow fades in under the card you're pointing at
+        float k = a.hover * (g_t.dark ? 0.16f : 0.07f);
+        for (int n = 1; n <= 4; ++n)
+            g_c.FillRound(D2D1::RectF(r.left - n * 0.5f, r.top + n * 1.2f, r.right + n * 0.5f, r.bottom + n * 1.6f), 10 + n, Rgb(0x000000, k / n));
+    }
     D2D1_COLOR_F bg = Mix(g_t.surface, g_t.surfaceHover, a.hover);
     g_c.FillRound(r, 10, bg);
     g_c.StrokeRound(r, 10, focused && g_keyboardMode ? g_t.accent : Mix(g_t.divider, Alpha(g_t.accent, 0.5f), a.hover * 0.4f), focused && g_keyboardMode ? 2.0f : 1.0f);
@@ -832,7 +865,13 @@ static void DrawSearch(const D2D1_RECT_F& r) {
     auto* f = Format(13);
     D2D1_RECT_F tr = D2D1::RectF(r.left + 34, r.top, r.right - 30, r.bottom);
     if (g_search.empty()) g_c.Text(g_searchFocus ? L"" : L"Search apps   Ctrl+K", f, tr, g_t.faint);
-    else g_c.Text(g_search, f, tr, g_t.text);
+    else {
+        if (g_searchFocus && g_searchAll) {
+            float sw = std::min(MeasureWidth(g_search, f), tr.right - tr.left);
+            g_c.FillRound(D2D1::RectF(tr.left - 1, r.top + 7, tr.left + sw + 1, r.bottom - 7), 2, Alpha(g_t.accent, 0.35f));
+        }
+        g_c.Text(g_search, f, tr, g_t.text);
+    }
     if (g_searchFocus && g_caretOn) {
         float cx = tr.left + std::min(MeasureWidth(g_search, f), tr.right - tr.left - 2);
         g_c.Fill(D2D1::RectF(cx, r.top + 8, cx + 1.2f, r.bottom - 8), g_t.text);
@@ -1059,7 +1098,7 @@ static void DrawDetails(float x0) {
         const ReleaseInfo& r = a.releases[k];
         if (r.prerelease && !UsesBeta(a) && &r != beta) continue;
         ++shown;
-        std::wstring notes = CleanNotes(r.notes);
+        std::wstring notes = k < a.notes.size() ? a.notes[k] : CleanNotes(r.notes);
         if (notes.empty()) notes = L"No notes for this release.";
         float nh = MeasureHeight(notes, notesF, right - left - 32);
         float boxH = 56 + nh + 16;
@@ -1135,8 +1174,8 @@ static void DrawThemePreview(const ThemeDef& def0, const D2D1_RECT_F& r, int ind
     D2D1_RECT_F pv = D2D1::RectF(r.left + 10, r.top + 10, r.right - 10, r.bottom - 50);
     ID2D1RoundedRectangleGeometry* clip = nullptr;
     d2d->CreateRoundedRectangleGeometry(D2D1::RoundedRect(pv, 7, 7), &clip);
-    ID2D1Layer* layer = nullptr;
-    g_rt->CreateLayer(&layer);
+    if (!g_previewLayer) g_rt->CreateLayer(&g_previewLayer);
+    ID2D1Layer* layer = g_previewLayer;
     if (clip && layer) g_rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), clip), layer);
     if (def.backdrop == L"acrylic" || def.surfaceOpacity < 1.0f) {
         // glass themes: show them over a "wallpaper"
@@ -1177,7 +1216,7 @@ static void DrawThemePreview(const ThemeDef& def0, const D2D1_RECT_F& r, int ind
         if (k == 0) g_c.FillRound(btn, 2.5f, pt.accent);
         else g_c.FillRound(btn, 2.5f, pt.surfaceStrong);
     }
-    if (layer) { g_rt->PopLayer(); layer->Release(); }
+    if (layer && clip) g_rt->PopLayer();
     if (clip) clip->Release();
     g_c.StrokeRound(pv, 7, Alpha(g_t.text, 0.10f));
     // name
@@ -1337,7 +1376,7 @@ static void DrawSettings(float x0) {
     Button(D2D1::RectF(right - 140, s2.top + 144, right - 18, s2.top + 176), L"Check now", icon::Refresh, Btn::Secondary, Hit::SetCheckNow);
     y = s2.bottom + 26;
 
-    D2D1_RECT_F s5 = section(L"HANGAR UPDATES", 64 * 3 + (selfupdate::PreviousVersions().empty() ? 0 : 64));
+    D2D1_RECT_F s5 = section(L"HANGAR UPDATES", 64 * 3 + (g_prevVersions.empty() ? 0 : 64));
     {
         std::wstring status;
         switch (g_self.kind) {
@@ -1360,7 +1399,7 @@ static void DrawSettings(float x0) {
         g_c.Line(left + 18, s5.top + 128, right - 18, s5.top + 128, g_t.divider);
         rowLabel(s5.top + 132, L"Install Hangar updates automatically", L"Only when nothing is installing and you're not using Hangar");
         Segmented(right - 200, s5.top + 144, {L"On", L"Off"}, g_cfg.hangarAuto ? 0 : 1, Hit::SelfAuto);
-        auto prev = selfupdate::PreviousVersions();
+        auto& prev = g_prevVersions;
         if (!prev.empty()) {
             g_c.Line(left + 18, s5.top + 192, right - 18, s5.top + 192, g_t.divider);
             rowLabel(s5.top + 196, L"Previous versions", L"Go back if a new Hangar gives you trouble");
@@ -1442,18 +1481,75 @@ static void ClampScroll() {
     g_scroll = std::clamp(g_scroll, 0.0f, maxS);
 }
 
+static float g_trackTop = 0, g_trackH = 0, g_thumbTop = 0, g_thumbH = 0;
+static bool g_dragThumb = false;
+static float g_dragGrab = 0;
+
 static void DrawScrollbar(float x0) {
-    float top = g_page == Page::Library ? kHeader : 0;
-    if (g_contentH <= g_viewH + 1) return;
-    float trackH = g_viewH - 8;
-    float thumbH = std::max(40.0f, trackH * g_viewH / g_contentH);
-    float t = g_scroll / (g_contentH - g_viewH);
-    float y = top + 4 + (trackH - thumbH) * t;
-    g_c.FillRound(D2D1::RectF(g_W - 8, y, g_W - 4, y + thumbH), 2, g_t.dark ? Rgb(0xFFFFFF, 0.18f) : Rgb(0x000000, 0.2f));
     (void)x0;
+    float top = g_page == Page::Library ? kHeader : 0;
+    if (g_contentH <= g_viewH + 1) { g_thumbH = 0; return; }
+    g_trackTop = top + 4;
+    g_trackH = g_viewH - 8;
+    g_thumbH = std::max(40.0f, g_trackH * g_viewH / g_contentH);
+    float t = g_scroll / (g_contentH - g_viewH);
+    g_thumbTop = g_trackTop + (g_trackH - g_thumbH) * t;
+    bool active = g_dragThumb || IsHover(Hit::ScrollThumb) || IsHover(Hit::ScrollTrack);
+    float w = active ? 8.0f : 4.0f;
+    if (active) g_c.FillRound(D2D1::RectF(g_W - 12, g_trackTop, g_W - 2, g_trackTop + g_trackH), 5, Alpha(g_t.text, 0.05f));
+    D2D1_COLOR_F thumb = g_t.dark ? Rgb(0xFFFFFF, active ? 0.34f : 0.18f) : Rgb(0x000000, active ? 0.36f : 0.2f);
+    g_c.FillRound(D2D1::RectF(g_W - 3 - w, g_thumbTop, g_W - 3, g_thumbTop + g_thumbH), w / 2, thumb);
+    // a wide, easy target on the right edge
+    AddHot(D2D1::RectF(g_W - 14, g_trackTop, g_W, g_trackTop + g_trackH), Hit::ScrollTrack);
+    AddHot(D2D1::RectF(g_W - 14, g_thumbTop, g_W, g_thumbTop + g_thumbH), Hit::ScrollThumb);
+}
+
+static void DragThumbTo(float y) {
+    float range = g_trackH - g_thumbH;
+    if (range <= 0) return;
+    float t = std::clamp((y - g_dragGrab - g_trackTop) / range, 0.0f, 1.0f);
+    g_scroll = g_scrollTarget = t * (g_contentH - g_viewH);
+    InvalidateRect(g_hwnd, nullptr, FALSE);
+}
+
+// HANGAR_PERF=1 logs frame times, time to first frame and memory to hangar.log
+static bool g_perf = false;
+static LARGE_INTEGER g_qpf, g_startQpc;
+static double g_frameMsSum = 0, g_frameMsMax = 0;
+static int g_frames = 0;
+static bool g_firstFrameLogged = false;
+
+static double QpcMs(LARGE_INTEGER a, LARGE_INTEGER b) { return (b.QuadPart - a.QuadPart) * 1000.0 / g_qpf.QuadPart; }
+
+static void PerfFrame(LARGE_INTEGER t0) {
+    LARGE_INTEGER t1;
+    QueryPerformanceCounter(&t1);
+    double ms = QpcMs(t0, t1);
+    if (!g_firstFrameLogged) {
+        g_firstFrameLogged = true;
+        FILETIME created, exited, kernel, user, now;
+        GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user);
+        GetSystemTimePreciseAsFileTime(&now);
+        double sinceLaunch = ((((ULONGLONG)now.dwHighDateTime << 32) | now.dwLowDateTime) -
+                              (((ULONGLONG)created.dwHighDateTime << 32) | created.dwLowDateTime)) / 10000.0;
+        Log(L"perf: first frame %.0f ms after launch (window code %.0f ms, frame %.1f ms)", sinceLaunch, QpcMs(g_startQpc, t1), ms);
+    }
+    g_frameMsSum += ms;
+    g_frameMsMax = std::max(g_frameMsMax, ms);
+    if (!g_perf) return;
+    if (++g_frames == 120) {
+        PROCESS_MEMORY_COUNTERS pmc{sizeof(pmc)};
+        GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+        Log(L"perf: page=%d avg %.2f ms, max %.2f ms over 120 frames; working set %.1f MB, private %.1f MB",
+            (int)g_page, g_frameMsSum / 120, g_frameMsMax, pmc.WorkingSetSize / 1048576.0, pmc.PagefileUsage / 1048576.0);
+        g_frames = 0;
+        g_frameMsSum = g_frameMsMax = 0;
+    }
 }
 
 static void Paint() {
+    LARGE_INTEGER perfT0{};
+    if (g_perf || !g_firstFrameLogged) QueryPerformanceCounter(&perfT0);
     if (!EnsureDevice()) return;
     D2D1_SIZE_F sz = g_rt->GetSize();
     g_W = sz.width;
@@ -1480,32 +1576,55 @@ static void Paint() {
     DrawWhatsNew();
     HRESULT hr = g_rt->EndDraw();
     if (hr == (HRESULT)D2DERR_RECREATE_TARGET) DiscardDevice();
+    gfx::FrameDone();
     ClampScroll();
+    if (g_perf || !g_firstFrameLogged) PerfFrame(perfT0);
 }
 
 // ---------------------------------------------------------------- animation
+// Animations follow wall-clock time, so they run at the same speed whatever the frame rate, and
+// they're turned off when Windows' "Animation effects" setting is off.
+static bool g_animations = true;
+static LARGE_INTEGER g_lastAnimQpc{};
+
+static void ReadAnimationSetting() {
+    BOOL on = TRUE;
+    if (SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &on, 0)) g_animations = on != FALSE;
+}
+
+// exponential ease toward target; `rate` is the fraction covered per 60 Hz frame
+static bool Ease(float& v, float target, float rate, float dtFrames, float snap) {
+    if (!g_animations || std::fabs(target - v) <= snap) { v = target; return false; }
+    v += (target - v) * (1.0f - std::pow(1.0f - rate, dtFrames));
+    return true;
+}
+
 static bool Animate() {
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+    float dt = g_lastAnimQpc.QuadPart ? (float)QpcMs(g_lastAnimQpc, now) : 16.67f;
+    g_lastAnimQpc = now;
+    float frames = std::clamp(dt / 16.67f, 0.25f, 4.0f);
     bool more = false;
-    // smooth scrolling
-    if (std::fabs(g_scrollTarget - g_scroll) > 0.5f) { g_scroll += (g_scrollTarget - g_scroll) * 0.28f; more = true; }
-    else g_scroll = g_scrollTarget;
-    // hover fades
+    more |= Ease(g_scroll, g_scrollTarget, 0.26f, frames, 0.5f);
     for (size_t i = 0; i < g_apps.size(); ++i) {
         AppState& a = g_apps[i];
         bool hot = (g_hover.kind == Hit::Card || g_hover.kind == Hit::CardAction) && g_hover.index == (int)i;
-        float target = hot ? 1.0f : 0.0f;
-        if (std::fabs(a.hover - target) > 0.01f) { a.hover += (target - a.hover) * 0.3f; more = true; }
-        else a.hover = target;
+        more |= Ease(a.hover, hot ? 1.0f : 0.0f, 0.28f, frames, 0.01f);
         if (a.busy) {
-            if (a.percent < 0) more = true;   // indeterminate bar
-            else if (std::fabs(a.shownPercent - a.percent) > 0.2f) { a.shownPercent += (a.percent - a.shownPercent) * 0.25f; more = true; }
-            else a.shownPercent = (float)a.percent;
+            if (a.percent < 0) more = true;   // indeterminate bar keeps moving
+            else more |= Ease(a.shownPercent, (float)a.percent, 0.22f, frames, 0.2f);
         }
     }
-    if (g_pageAnim < 1.0f) { g_pageAnim = std::min(1.0f, g_pageAnim + 0.12f); more = true; }
+    if (g_pageAnim < 1.0f) {
+        g_pageAnim = g_animations ? std::min(1.0f, g_pageAnim + 0.12f * frames) : 1.0f;
+        more |= g_pageAnim < 1.0f;
+    }
     float toastTarget = (!g_toast.empty() && GetTickCount() - g_toastAt < 60000) ? 1.0f : 0.0f;
-    if (std::fabs(g_toastAnim - toastTarget) > 0.01f) { g_toastAnim += (toastTarget - g_toastAnim) * 0.25f; more = true; }
-    else { g_toastAnim = toastTarget; if (toastTarget == 0) g_toast.clear(); }
+    if (!Ease(g_toastAnim, toastTarget, 0.25f, frames, 0.01f) && toastTarget == 0) g_toast.clear();
+    else if (g_toastAnim != toastTarget) more = true;
+    if (!more) g_lastAnimQpc.QuadPart = 0;   // next animation starts fresh
     return more;
 }
 
@@ -1521,7 +1640,7 @@ static void Navigate(Page p, int detail = -1) {
 }
 
 static void ShowNav(const std::wstring& id) {
-    if (id == L"settings") { Navigate(Page::Settings); return; }
+    if (id == L"settings") { g_prevVersions = selfupdate::PreviousVersions(); Navigate(Page::Settings); return; }
     if (id == L"themes") { Navigate(Page::Themes); return; }
     if (g_page == Page::Library && g_nav == id) return;
     g_nav = id;
@@ -1626,7 +1745,7 @@ static void Click(const HotRect& h) {
         case Hit::SearchClear: g_search.clear(); g_focus = -1; g_scrollTarget = 0; break;
         case Hit::ViewGrid: g_cfg.listView = false; g_scrollTarget = 0; ConfigSave(); break;
         case Hit::ViewList: g_cfg.listView = true; g_scrollTarget = 0; ConfigSave(); break;
-        case Hit::Refresh: CheckReleases(true); ScanAll(); jobs::FetchManifest(g_manifestText); break;
+        case Hit::Refresh: CheckReleases(true); ScanAll(true); jobs::FetchManifest(g_manifestText); break;
         case Hit::UpdateAll: UpdateAll(); break;
         case Hit::Card: Navigate(Page::Details, h.index); break;
         case Hit::CardAction: DoPrimary(h.index); break;
@@ -1666,6 +1785,7 @@ static void Click(const HotRect& h) {
             break;
         case Hit::ThemeReload:
             g_customThemes = LoadCustomThemes();
+            ReadAnimationSetting();
             ApplyTheme();
             Toast(std::to_wstring(g_customThemes.size()) + (g_customThemes.size() == 1 ? L" custom theme loaded." : L" custom themes loaded."));
             break;
@@ -1697,7 +1817,7 @@ static void Click(const HotRect& h) {
             break;
         case Hit::SelfAuto: g_cfg.hangarAuto = h.arg == 0; ConfigSave(); break;
         case Hit::SelfRollback: {
-            auto prev = selfupdate::PreviousVersions();
+            auto prev = g_prevVersions;
             if (h.arg < 0 || h.arg >= (int)prev.size()) break;
             std::wstring msg = L"Go back to Hangar " + prev[h.arg].version + L"?\n\nHangar restarts and won't install " + HANGAR_VERSION +
                                L" again automatically. Your apps and settings aren't touched.";
@@ -1736,11 +1856,21 @@ static void OnKey(WPARAM vk) {
         return;
     }
     if (ctrl && vk == 'U') { UpdateAll(); return; }
-    if (vk == VK_F5 || (ctrl && vk == 'R')) { CheckReleases(true); ScanAll(); return; }
-    if (ctrl && vk == VK_OEM_COMMA) { Navigate(Page::Settings); return; }
+    if (vk == VK_F5 || (ctrl && vk == 'R')) { CheckReleases(true); ScanAll(true); return; }
+    if (ctrl && vk == VK_OEM_COMMA) { g_prevVersions = selfupdate::PreviousVersions(); Navigate(Page::Settings); return; }
     if ((alt && vk == VK_LEFT) || vk == VK_BROWSER_BACK) { if (g_page != Page::Library) Navigate(Page::Library); return; }
 
     if (g_searchFocus) {
+        if (ctrl && vk == 'A') { g_searchAll = !g_search.empty(); Invalidate(); return; }
+        if (vk != VK_CONTROL && vk != VK_SHIFT) {
+            bool wasAll = g_searchAll;
+            g_searchAll = false;
+            if (wasAll && (vk == VK_DELETE)) { g_search.clear(); g_scrollTarget = 0; Invalidate(); return; }
+            if (wasAll && (vk == VK_BACK || (vk >= 0x30 && vk <= 0x5A) || vk == VK_SPACE || (vk >= VK_OEM_1 && vk <= VK_OEM_8))) {
+                g_search.clear();   // typing over a selection replaces it; Backspace just clears it
+                if (vk == VK_BACK) { g_focus = -1; g_scrollTarget = 0; Invalidate(); g_suppressBack = true; return; }
+            }
+        }
         if (vk == VK_ESCAPE) {
             if (!g_search.empty()) { g_search.clear(); g_scrollTarget = 0; }
             else g_searchFocus = false;
@@ -1804,6 +1934,7 @@ static void OnKey(WPARAM vk) {
 }
 
 static void OnChar(wchar_t c) {
+    if (c == 8 && g_suppressBack) { g_suppressBack = false; return; }   // that Backspace cleared a selection
     if (c < 32 || c == 127) {
         if (c == 8 && g_searchFocus && !g_search.empty()) {   // Backspace
             if (GetKeyState(VK_CONTROL) < 0) {
@@ -1845,6 +1976,9 @@ static void OnReleases(ReleasesResult* r) {
     if (r->ok || !r->releases.empty()) {
         a->releases = std::move(r->releases);
         a->releasesLoaded = true;
+        // clean up the Markdown once here instead of on every frame of the app page
+        a->notes.clear();
+        for (auto& rel : a->releases) a->notes.push_back(CleanNotes(rel.notes));
     }
     if (!r->fromCache) {
         a->releasesLoaded = true;
@@ -1942,8 +2076,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_ERASEBKGND: return 1;
         case WM_SIZE:
             if (g_rt) g_rt->Resize(D2D1::SizeU(LOWORD(lp), HIWORD(lp)));
-            if (wp == SIZE_MINIMIZED) KillTimer(hwnd, TIMER_PROCS);
-            else SetTimer(hwnd, TIMER_PROCS, 2500, nullptr);
+            if (wp == SIZE_MINIMIZED) {
+                // nothing to draw while minimized: stop polling and hand memory back to Windows
+                KillTimer(hwnd, TIMER_PROCS);
+                gfx::ClearTextCaches();
+                SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
+            } else {
+                SetTimer(hwnd, TIMER_PROCS, ProcPollMs(), nullptr);
+            }
             Invalidate();
             return 0;
         case WM_GETMINMAXINFO: {
@@ -1962,17 +2102,21 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_SETTINGCHANGE:
+            ReadAnimationSetting();
             if (lp && (wcscmp((const wchar_t*)lp, L"ImmersiveColorSet") == 0)) {
+                InvalidateSystemColors();
                 ApplyTheme();
                 Invalidate();
             }
             return 0;
         case WM_DWMCOLORIZATIONCOLORCHANGED:
+            InvalidateSystemColors();
             ApplyTheme();
             return 0;
         case WM_MOUSEMOVE: {
             g_lastInput = GetTickCount();
             float x = GET_X_LPARAM(lp) / g_scale, y = GET_Y_LPARAM(lp) / g_scale;
+            if (g_dragThumb) { DragThumbTo(y); return 0; }
             if (!g_tracking) {
                 TRACKMOUSEEVENT t{sizeof(t), TME_LEAVE, hwnd, 0};
                 TrackMouseEvent(&t);
@@ -1984,7 +2128,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 StartAnim();
             }
             if (g_keyboardMode) { g_keyboardMode = false; Invalidate(); }
-            bool hand = h.kind != Hit::None && h.enabled && h.kind != Hit::Search;
+            bool hand = h.kind != Hit::None && h.enabled && h.kind != Hit::Search && h.kind != Hit::ScrollThumb && h.kind != Hit::ScrollTrack;
             SetCursor(LoadCursorW(nullptr, h.kind == Hit::Search ? IDC_IBEAM : hand ? IDC_HAND : IDC_ARROW));
             return 0;
         }
@@ -2001,12 +2145,20 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             float x = GET_X_LPARAM(lp) / g_scale, y = GET_Y_LPARAM(lp) / g_scale;
             g_pressed = HitAt(x, y);
             if (g_pressed.kind == Hit::None && g_searchFocus) { g_searchFocus = false; }
+            if (g_pressed.kind == Hit::ScrollThumb) {
+                g_dragThumb = true;
+                g_dragGrab = y - g_thumbTop;
+            } else if (g_pressed.kind == Hit::ScrollTrack) {
+                // jump a page toward the click
+                Scroll(y < g_thumbTop ? g_viewH - 60 : -(g_viewH - 60));
+            }
             SetCapture(hwnd);
             Invalidate();
             return 0;
         }
         case WM_LBUTTONUP: {
             ReleaseCapture();
+            if (g_dragThumb) { g_dragThumb = false; g_pressed = {{0, 0, 0, 0}, Hit::None, -1, 0, false}; Invalidate(); return 0; }
             float x = GET_X_LPARAM(lp) / g_scale, y = GET_Y_LPARAM(lp) / g_scale;
             HotRect up = HitAt(x, y);
             HotRect down = g_pressed;
@@ -2041,7 +2193,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     Invalidate();
                     break;
                 case TIMER_PROCS:
-                    SetTimer(hwnd, TIMER_PROCS, 2500, nullptr);
+                    SetTimer(hwnd, TIMER_PROCS, ProcPollMs(), nullptr);
                     if (IsWindowVisible(hwnd) && !IsIconic(hwnd)) PollProcesses();
                     break;
                 case TIMER_CHECK:
@@ -2060,6 +2212,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     selfupdate::SignalHealthy(g_after);
                     selfupdate::FinishAfterUpdate(g_after);
                     break;
+                case TIMER_MEMNOTE: {
+                    KillTimer(hwnd, TIMER_MEMNOTE);
+                    PROCESS_MEMORY_COUNTERS pmc{sizeof(pmc)};
+                    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+                    Log(L"perf: after 1 minute: working set %.1f MB, private %.1f MB, peak %.1f MB",
+                        pmc.WorkingSetSize / 1048576.0, pmc.PagefileUsage / 1048576.0, pmc.PeakWorkingSetSize / 1048576.0);
+                    break;
+                }
                 case TIMER_TOAST:
                     KillTimer(hwnd, TIMER_TOAST);
                     g_toastAt = 0;
@@ -2070,6 +2230,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_ACTIVATEAPP:
             // pick up apps that updated or uninstalled themselves while Hangar was in the background
             if (wp && GetTickCount() - g_lastScan > 8000) ScanAll();
+            if (wp && !IsIconic(hwnd)) PollProcesses();   // "Running" is right the moment you look
+            SetTimer(hwnd, TIMER_PROCS, ProcPollMs(), nullptr);
             return 0;
         case WM_KILLFOCUS:
             g_searchFocus = false;
@@ -2135,6 +2297,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
 HWND UiCreate(HINSTANCE inst, int show, const selfupdate::AfterUpdate& after) {
     g_after = after;
+    QueryPerformanceFrequency(&g_qpf);
+    QueryPerformanceCounter(&g_startQpc);
+    wchar_t pv[8];
+    g_perf = GetEnvironmentVariableW(L"HANGAR_PERF", pv, 8) > 0;
     if (!gfx::Init()) return nullptr;
     WNDCLASSEXW wc{sizeof(wc)};
     wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
@@ -2207,7 +2373,8 @@ HWND UiCreate(HINSTANCE inst, int show, const selfupdate::AfterUpdate& after) {
     // then refresh in the background
     jobs::FetchManifest(g_manifestText);
     CheckReleases(false);
-    SetTimer(hwnd, TIMER_PROCS, 2500, nullptr);
+    SetTimer(hwnd, TIMER_PROCS, ProcPollMs(), nullptr);
+    SetTimer(hwnd, TIMER_MEMNOTE, 60 * 1000, nullptr);
     SetTimer(hwnd, TIMER_CHECK, 15 * 60 * 1000, nullptr);
     SetTimer(hwnd, TIMER_SELF, 20 * 1000, nullptr);   // first check about 20 s after startup, then every check interval
     return hwnd;
