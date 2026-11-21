@@ -64,6 +64,25 @@
       "critical": true
     },
     {
+      "id": "loupe",
+      "name": "Loupe",
+      "repo": "larosa023/Loupe",
+      "description": "A fast, modern replacement for the Windows Photos app.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Loupe/main/res/loupe.png",
+      "exe": "Loupe.exe",
+      "install": {
+        "type": "portable",
+        "asset": "Loupe.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Loupe"
+      },
+      "args": {
+        "quit": "--quit",
+        "uninstall": "--uninstall"
+      }
+    },
+    {
       "id": "breaker",
       "name": "Breaker",
       "repo": "larosa023/Breaker",

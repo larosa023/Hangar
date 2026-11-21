@@ -36,7 +36,7 @@ Delta updates can be added later if a large app needs them.
 
 | Install type | Apps | What Hangar does |
 |---|---|---|
-| `portable` (one exe) | Foyer, Strata, Breaker, Switch, Marq, Savor, Cinder, Relic | Downloads the exe, verifies it, places it in `%LOCALAPPDATA%\Programs\<App>`, adds a Start menu shortcut and an Apps & features entry |
+| `portable` (one exe) | Foyer, Strata, Loupe, Breaker, Switch, Marq, Savor, Cinder, Relic | Downloads the exe, verifies it, places it in `%LOCALAPPDATA%\Programs\<App>`, adds a Start menu shortcut and an Apps & features entry |
 | `nsis` (setup exe) | Amplite, Gridline, Prism, Drift (Electron); Driftcord, Ripple, Haul, Downtime, Lumora, Fullcourt (Tauri) | Runs the setup with `/S`, then finds the app through Apps & features |
 | `velopack` | Ember, Mantel, Faderly, Tonely | Runs `Setup.exe --silent`, then finds `%LOCALAPPDATA%\<packId>\current\<exe>` |
 
