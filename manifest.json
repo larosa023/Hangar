@@ -210,6 +210,25 @@
       }
     },
     {
+      "id": "caption",
+      "name": "Caption",
+      "repo": "larosa023/Caption",
+      "description": "Live captions and translation for any audio, 100% local on your GPU.",
+      "category": "audio",
+      "icon": "https://raw.githubusercontent.com/larosa023/Caption/main/res/caption.png",
+      "exe": "Caption.exe",
+      "install": {
+        "type": "portable",
+        "asset": "Caption.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Caption"
+      },
+      "args": {
+        "quit": "--quit",
+        "uninstall": "--uninstall"
+      }
+    },
+    {
       "id": "lumora",
       "name": "Lumora",
       "repo": "larosa023/Lumora",
