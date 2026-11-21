@@ -355,6 +355,24 @@
       }
     },
     {
+      "id": "haul",
+      "name": "Haul",
+      "repo": "larosa023/Haul",
+      "description": "A clean download manager and torrent client.",
+      "category": "media",
+      "icon": "https://raw.githubusercontent.com/larosa023/Haul/main/src-tauri/icons/icon.png",
+      "exe": "Haul.exe",
+      "install": {
+        "type": "nsis",
+        "asset": "Haul_*_x64-setup.exe",
+        "registry": "Haul",
+        "checksums": "SHA256SUMS.txt"
+      },
+      "args": {
+        "quit": "--quit"
+      }
+    },
+    {
       "id": "fullcourt",
       "name": "Fullcourt",
       "repo": "larosa023/fullcourt",
