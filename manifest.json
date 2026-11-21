@@ -163,6 +163,24 @@
       }
     },
     {
+      "id": "restock",
+      "name": "Restock",
+      "repo": "larosa023/Restock",
+      "description": "One-click updates for every other app on your PC, built on winget.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Restock/main/res/restock.png",
+      "exe": "Restock.exe",
+      "install": {
+        "type": "portable",
+        "asset": "Restock.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Restock"
+      },
+      "args": {
+        "quit": "--quit"
+      }
+    },
+    {
       "id": "faderly",
       "name": "Faderly",
       "repo": "larosa023/Faderly",
