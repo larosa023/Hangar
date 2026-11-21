@@ -419,6 +419,7 @@ void ScanProcesses(const std::vector<std::wstring>& ids, const std::vector<std::
 // ---------------------------------------------------------------- operations
 struct OpContext {
     OpRequest req;
+    bool needsForce = false;
     std::shared_ptr<std::atomic<bool>> cancel;
     void Progress(int pct, const std::wstring& text) {
         auto* p = new OpProgress;
@@ -556,7 +557,19 @@ static bool CloseApp(OpContext& ctx, std::wstring& error) {
         EnumWindows(CloseEnum, (LPARAM)&c);
     }
     if (WaitForExit(pids, 10000)) { Sleep(300); return true; }
-    error = ctx.req.def.name + L" didn't close. Save your work, close it, and try again.";
+    // still running: usually a tray app that hides instead of closing. Only end it if you said so.
+    std::vector<DWORD> left = RunningPids(ctx.req.inst);
+    if (left.empty()) return true;
+    if (ctx.req.force) {
+        ctx.Progress(-1, L"Closing " + ctx.req.def.name + L"…");
+        for (DWORD pid : left)
+            if (HANDLE h = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pid)) { TerminateProcess(h, 0); CloseHandle(h); }
+        if (WaitForExit(left, 8000)) { Sleep(500); Log(L"%ls: force-closed (you agreed)", ctx.req.def.id.c_str()); return true; }
+        error = L"Couldn't close " + ctx.req.def.name + L". Close it from its tray icon, then try again.";
+        return false;
+    }
+    ctx.needsForce = true;
+    error = ctx.req.def.name + L" didn't close. If it's in the tray, quit it from there and try again.";
     return false;
 }
 
@@ -772,6 +785,7 @@ static void DoOp(OpContext ctx) {
         if (!done->ok) done->message = error;
     }
     done->cancelled = *ctx.cancel;
+    done->needsForce = ctx.needsForce && !done->cancelled;
     if (done->cancelled) done->message = L"Cancelled.";
     Log(L"%ls: %ls", def.id.c_str(), done->message.c_str());
     {

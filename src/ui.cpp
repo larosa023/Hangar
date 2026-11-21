@@ -232,10 +232,11 @@ static std::wstring JoinNames(const std::vector<std::wstring>& names) {
     return s;
 }
 
-static void StartOp(int i, OpKind kind, const ReleaseInfo* rel) {
+static void StartOp(int i, OpKind kind, const ReleaseInfo* rel, bool force = false) {
     AppState& a = g_apps[i];
     if (a.busy) return;
     OpRequest req;
+    req.force = force;
     req.kind = kind;
     req.def = a.def;
     req.inst = a.inst;
@@ -2035,6 +2036,22 @@ static void OnOpDone(OpDone* d) {
     } else if (d->cancelled) {
         a->lastError.clear();
         Toast(a->def.name + L": cancelled.");
+    } else if (d->needsForce) {
+        // most often a tray app: closing its window only hides it
+        std::wstring what = d->kind == OpKind::Uninstall ? L"uninstall it" : d->kind == OpKind::Install ? L"install" : L"update it";
+        std::wstring msg = a->def.name + L" didn't close by itself. It may be running in the system tray.\n\n"
+                           L"Hangar can force it to close and " + what + L". Anything unsaved in " + a->def.name + L" will be lost.";
+        int idx = FindApp(d->id) - &g_apps[0];
+        a->lastError.clear();
+        if (MessageBoxW(g_hwnd, msg.c_str(), L"Hangar", MB_OKCANCEL | MB_ICONQUESTION | MB_DEFBUTTON2) == IDOK) {
+            const ReleaseInfo* rel = d->kind == OpKind::Uninstall ? nullptr : Latest(*a);
+            if (d->kind == OpKind::Repair) {
+                for (auto& r : a->releases)
+                    if (!a->inst.version.empty() && CompareVersions(r.version, a->inst.version) == 0 && FindInstallAsset(r, a->def, r.prerelease)) rel = &r;
+            }
+            if (d->kind == OpKind::Uninstall || rel) { StartOp(idx, d->kind, rel, true); return; }
+        }
+        a->lastError = d->message;
     } else {
         a->lastError = d->message;
         Toast(a->def.name + L": " + d->message, true);

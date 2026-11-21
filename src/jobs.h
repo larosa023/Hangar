@@ -41,6 +41,7 @@ struct OpRequest {
     Installed inst;
     ReleaseInfo release;           // install / update / repair
     bool beta = false;
+    bool force = false;            // the user agreed to force-close the app if it won't close by itself
 };
 
 struct OpProgress {
@@ -56,6 +57,7 @@ struct OpDone {
     bool cancelled = false;
     std::wstring message;          // shown to the user
     std::wstring version;
+    bool needsForce = false;       // the app wouldn't close by itself (often a tray app): ask to force it
 };
 
 namespace jobs {

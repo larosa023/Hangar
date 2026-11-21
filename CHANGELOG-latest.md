@@ -1,4 +1,8 @@
-## Hangar 0.1.6: smoother and lighter
+## Hangar 0.1.7
+
+**Tray apps update now.** Some apps (Lumora, for one) only hide to the tray when asked to close, so their updates failed with "didn't close". Hangar now offers to force-close the app and finish the update. It only does that if you say yes.
+
+## Also in this update (0.1.6): smoother and lighter
 
 **Faster drawing**
 - Text is laid out once and reused instead of on every frame. That was the most expensive part of drawing, so scrolling, hover effects and page changes do much less work per frame.
