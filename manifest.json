@@ -64,6 +64,25 @@
       "critical": true
     },
     {
+      "id": "loupe",
+      "name": "Loupe",
+      "repo": "larosa023/Loupe",
+      "description": "A fast, modern replacement for the Windows Photos app.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Loupe/main/res/loupe.png",
+      "exe": "Loupe.exe",
+      "install": {
+        "type": "portable",
+        "asset": "Loupe.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Loupe"
+      },
+      "args": {
+        "quit": "--quit",
+        "uninstall": "--uninstall"
+      }
+    },
+    {
       "id": "breaker",
       "name": "Breaker",
       "repo": "larosa023/Breaker",
@@ -163,6 +182,24 @@
       }
     },
     {
+      "id": "restock",
+      "name": "Restock",
+      "repo": "larosa023/Restock",
+      "description": "One-click updates for every other app on your PC, built on winget.",
+      "category": "windows",
+      "icon": "https://raw.githubusercontent.com/larosa023/Restock/main/res/restock.png",
+      "exe": "Restock.exe",
+      "install": {
+        "type": "portable",
+        "asset": "Restock.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Restock"
+      },
+      "args": {
+        "quit": "--quit"
+      }
+    },
+    {
       "id": "faderly",
       "name": "Faderly",
       "repo": "larosa023/Faderly",
@@ -189,6 +226,25 @@
         "type": "velopack",
         "packId": "Tonely",
         "asset": "Tonely-win-Setup.exe"
+      }
+    },
+    {
+      "id": "caption",
+      "name": "Caption",
+      "repo": "larosa023/Caption",
+      "description": "Live captions and translation for any audio, 100% local on your GPU.",
+      "category": "audio",
+      "icon": "https://raw.githubusercontent.com/larosa023/Caption/main/res/caption.png",
+      "exe": "Caption.exe",
+      "install": {
+        "type": "portable",
+        "asset": "Caption.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Caption"
+      },
+      "args": {
+        "quit": "--quit",
+        "uninstall": "--uninstall"
       }
     },
     {
@@ -318,6 +374,24 @@
       }
     },
     {
+      "id": "haul",
+      "name": "Haul",
+      "repo": "larosa023/Haul",
+      "description": "A clean download manager, torrent client and video downloader.",
+      "category": "media",
+      "icon": "https://raw.githubusercontent.com/larosa023/Haul/main/src-tauri/icons/icon.png",
+      "exe": "Haul.exe",
+      "install": {
+        "type": "nsis",
+        "asset": "Haul_*_x64-setup.exe",
+        "registry": "Haul",
+        "checksums": "SHA256SUMS.txt"
+      },
+      "args": {
+        "quit": "--quit"
+      }
+    },
+    {
       "id": "fullcourt",
       "name": "Fullcourt",
       "repo": "larosa023/fullcourt",
@@ -398,6 +472,42 @@
         "quit": "--quit"
       },
       "liveUpdate": true
+    },
+    {
+      "id": "reticle",
+      "name": "Reticle",
+      "repo": "larosa023/Reticle",
+      "description": "A lightweight in-game FPS overlay and crosshair. No injection, safe with anti-cheat.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Reticle/main/res/reticle.png",
+      "exe": "Reticle.exe",
+      "install": {
+        "type": "portable",
+        "asset": "Reticle.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Reticle"
+      },
+      "args": {
+        "quit": "--quit"
+      }
+    },
+    {
+      "id": "pitstop",
+      "name": "Pitstop",
+      "repo": "larosa023/Pitstop",
+      "description": "A clean NVIDIA driver manager: newest drivers, driver-only installs, one-click rollback and game settings.",
+      "category": "gaming",
+      "icon": "https://raw.githubusercontent.com/larosa023/Pitstop/main/src/Pitstop/Assets/pitstop.png",
+      "exe": "Pitstop.exe",
+      "install": {
+        "type": "portable",
+        "asset": "Pitstop.exe",
+        "checksums": "SHA256SUMS.txt",
+        "dir": "%LOCALAPPDATA%\\Programs\\Pitstop"
+      },
+      "args": {
+        "quit": "--quit"
+      }
     },
     {
       "id": "halo",

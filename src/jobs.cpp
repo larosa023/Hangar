@@ -14,6 +14,9 @@
 #include <map>
 #include <set>
 #include <memory>
+#include <deque>
+#include <functional>
+#include <chrono>
 #include <ctime>
 #include <algorithm>
 
@@ -44,7 +47,50 @@ template <class T> static void Post(UINT msg, T* obj) {
     if (s_shutdown || !s_hwnd || !PostMessageW(s_hwnd, msg, 0, (LPARAM)obj)) delete obj;
 }
 
-template <class F> static void Run(F&& f) {
+// Short jobs (checks, icons, scans) share a few worker threads instead of each getting a new one;
+// at startup that's 4 threads instead of ~50. Installs and updates still get their own thread.
+class Pool {
+public:
+    void Submit(std::function<void()> f) {
+        {
+            std::lock_guard<std::mutex> l(m_);
+            q_.push_back(std::move(f));
+            if ((int)q_.size() > idle_ && (int)threads_ < kMax) { ++threads_; std::thread([this] { Worker(); }).detach(); }
+        }
+        cv_.notify_one();
+    }
+private:
+    static constexpr int kMax = 4;
+    void Worker() {
+        HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        std::unique_lock<std::mutex> l(m_);
+        for (;;) {
+            ++idle_;
+            // an idle worker exits after a minute, so a quiet Hangar holds no extra threads
+            bool got = cv_.wait_for(l, std::chrono::seconds(60), [&] { return !q_.empty(); });
+            --idle_;
+            if (!got) break;
+            auto f = std::move(q_.front());
+            q_.pop_front();
+            l.unlock();
+            f();
+            l.lock();
+        }
+        --threads_;
+        l.unlock();
+        if (SUCCEEDED(hr)) CoUninitialize();
+    }
+    std::mutex m_;
+    std::condition_variable cv_;
+    std::deque<std::function<void()>> q_;
+    unsigned threads_ = 0;
+    int idle_ = 0;
+};
+static Pool& s_pool = *new Pool;   // never destroyed: workers may still be parked when the process exits
+
+template <class F> static void Run(F&& f) { s_pool.Submit(std::function<void()>(std::forward<F>(f))); }
+
+template <class F> static void RunDedicated(F&& f) {
     std::thread([f = std::forward<F>(f)]() mutable {
         HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
         f();
@@ -359,7 +405,10 @@ void Scan(const std::vector<AppDef>& defs) {
 }
 
 void ScanProcesses(const std::vector<std::wstring>& ids, const std::vector<std::wstring>& exes, const std::vector<std::wstring>& dirs) {
+    static std::atomic<bool> pending{false};
+    if (pending.exchange(true)) return;   // one poll at a time; a slow one isn't stacked up behind
     Run([ids, exes, dirs] {
+        struct Clear { ~Clear() { pending = false; } } clear;
         auto* res = new ProcResult;
         res->ids = ids;
         res->pids = FindRunning(exes, dirs);
@@ -370,6 +419,7 @@ void ScanProcesses(const std::vector<std::wstring>& ids, const std::vector<std::
 // ---------------------------------------------------------------- operations
 struct OpContext {
     OpRequest req;
+    bool needsForce = false;
     std::shared_ptr<std::atomic<bool>> cancel;
     void Progress(int pct, const std::wstring& text) {
         auto* p = new OpProgress;
@@ -507,7 +557,19 @@ static bool CloseApp(OpContext& ctx, std::wstring& error) {
         EnumWindows(CloseEnum, (LPARAM)&c);
     }
     if (WaitForExit(pids, 10000)) { Sleep(300); return true; }
-    error = ctx.req.def.name + L" didn't close. Save your work, close it, and try again.";
+    // still running: usually a tray app that hides instead of closing. Only end it if you said so.
+    std::vector<DWORD> left = RunningPids(ctx.req.inst);
+    if (left.empty()) return true;
+    if (ctx.req.force) {
+        ctx.Progress(-1, L"Closing " + ctx.req.def.name + L"…");
+        for (DWORD pid : left)
+            if (HANDLE h = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pid)) { TerminateProcess(h, 0); CloseHandle(h); }
+        if (WaitForExit(left, 8000)) { Sleep(500); Log(L"%ls: force-closed (you agreed)", ctx.req.def.id.c_str()); return true; }
+        error = L"Couldn't close " + ctx.req.def.name + L". Close it from its tray icon, then try again.";
+        return false;
+    }
+    ctx.needsForce = true;
+    error = ctx.req.def.name + L" didn't close. If it's in the tray, quit it from there and try again.";
     return false;
 }
 
@@ -723,6 +785,7 @@ static void DoOp(OpContext ctx) {
         if (!done->ok) done->message = error;
     }
     done->cancelled = *ctx.cancel;
+    done->needsForce = ctx.needsForce && !done->cancelled;
     if (done->cancelled) done->message = L"Cancelled.";
     Log(L"%ls: %ls", def.id.c_str(), done->message.c_str());
     {
@@ -742,7 +805,7 @@ void StartOp(const OpRequest& req) {
         s_cancel[req.def.id] = ctx.cancel;
     }
     ++s_activeOps;
-    Run([ctx] { DoOp(ctx); });
+    RunDedicated([ctx] { DoOp(ctx); });
 }
 
 void CancelOp(const std::wstring& id) {

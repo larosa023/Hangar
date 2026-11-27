@@ -13,6 +13,6 @@ $ZIG c++ -target x86_64-windows-gnu -std=c++17 -O2 -s -municode \
   ${EXTRA_FLAGS:-} src/*.cpp res/hangar.rc -o "${OUT:-dist/Hangar.exe}" \
   -Wl,--subsystem,windows \
   -ld2d1 -ldwrite -lole32 -loleaut32 -luuid -ldwmapi -lshcore -lshell32 -luser32 -lgdi32 -ladvapi32 -lshlwapi \
-  -lwindowscodecs -lcomctl32 -luxtheme -lwinhttp -lbcrypt -lversion -lcomdlg32
+  -lwindowscodecs -lcomctl32 -luxtheme -lwinhttp -lbcrypt -lversion -lcomdlg32 -lpsapi
 rm -f dist/Hangar.pdb
 ls -la "${OUT:-dist/Hangar.exe}"

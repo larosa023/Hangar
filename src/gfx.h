@@ -35,8 +35,9 @@ struct Theme {
     int backdropType = 1;           // DWMSBT_*: 1 none, 2 Mica, 3 acrylic
     uint32_t captionRgb = 0x16161A; // title bar color when there's no backdrop
 };
-bool SystemUsesLightTheme();
-uint32_t SystemAccent();                      // 0xRRGGBB
+bool SystemUsesLightTheme();                  // cached; InvalidateSystemColors() on WM_SETTINGCHANGE
+uint32_t SystemAccent();                      // 0xRRGGBB, cached
+void InvalidateSystemColors();
 bool BackdropSupported();
 void ApplyWindowTheme(HWND hwnd, const Theme& t);
 
@@ -64,17 +65,18 @@ struct Canvas {
         br->SetColor(c);
         rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), r, r), br);
     }
-    void Text(const std::wstring& s, IDWriteTextFormat* f, const D2D1_RECT_F& r, D2D1_COLOR_F c) {
-        if (!f || s.empty()) return;
-        br->SetColor(c);
-        rt->DrawText(s.c_str(), (UINT32)s.size(), f, r, br, D2D1_DRAW_TEXT_OPTIONS_CLIP);
-    }
+    void Text(const std::wstring& s, IDWriteTextFormat* f, const D2D1_RECT_F& r, D2D1_COLOR_F c);
     void Glyph(wchar_t g, IDWriteTextFormat* f, const D2D1_RECT_F& r, D2D1_COLOR_F c) {
         wchar_t s[2] = {g, 0};
         Text(s, f, r, c);
     }
 };
 
+// Text layouts are cached between frames (creating one is the most expensive part of drawing text).
+// Call FrameDone() once per frame; layouts unused for a few seconds are released.
+IDWriteTextLayout* Layout(const std::wstring& s, IDWriteTextFormat* f, float w, float h);
+void FrameDone();
+void ClearTextCaches();
 float MeasureWidth(const std::wstring& s, IDWriteTextFormat* f);
 float MeasureHeight(const std::wstring& s, IDWriteTextFormat* f, float width);
 

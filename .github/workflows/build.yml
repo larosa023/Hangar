@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # to refresh the release index right after publishing
 
 jobs:
   build:
@@ -89,3 +90,11 @@ jobs:
             dist/Hangar-win-x64.zip
             dist/Hangar.exe
             dist/SHA256SUMS.txt
+
+      # Refresh the release index now instead of waiting for its schedule, so every Hangar sees
+      # this release within minutes (scheduled runs can lag 10-30 minutes).
+      - name: Refresh release index
+        if: steps.rel.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run index.yml -R "$GITHUB_REPOSITORY" --ref main || echo "couldn't start the index workflow"

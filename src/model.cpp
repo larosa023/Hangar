@@ -515,7 +515,7 @@ static void ScanProcessesForPaths() {
 
 static void RefreshDiscoveryLocked() {
     long long now = (long long)time(nullptr);
-    if (s_discAt && now - s_discAt < 20) return;
+    if (s_discAt && now - s_discAt < 5 * 60) return;   // Refresh forces a new look
     s_discAt = now;
     s_disc.clear();
     ScanProcessesForPaths();
